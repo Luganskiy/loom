@@ -13,6 +13,7 @@
     "memory": "メモリ",
     "security": "セキュリティ",
     "registry": "レジストリ",
+    "integrations": "インテグレーション",
     "mcpServers": "MCPサーバー",
     "a2aAgents": "A2Aエージェント",
     "tagging": "タグ管理",
@@ -27,7 +28,8 @@
       "general": "一般",
       "models": "モデル",
       "networking": "ネットワーク",
-      "infrastructure": "インフラ"
+      "infrastructure": "インフラ",
+      "tagging": "タグ管理"
     },
     "preferences": {
       "title": "環境設定",

@@ -13,6 +13,7 @@
     "memory": "Memory",
     "security": "Security",
     "registry": "Registry",
+    "integrations": "Integrations",
     "mcpServers": "MCP Servers",
     "a2aAgents": "A2A Agents",
     "tagging": "Tagging",
@@ -22,12 +23,13 @@
   },
   "settings": {
     "title": "Settings",
-    "description": "Manage preferences, models, networking, and infrastructure.",
+    "description": "Manage preferences, models, networking, infrastructure, and tagging.",
     "tabs": {
       "general": "General",
       "models": "Models",
       "networking": "Networking",
-      "infrastructure": "Infrastructure"
+      "infrastructure": "Infrastructure",
+      "tagging": "Tagging"
     },
     "preferences": {
       "title": "Preferences",
