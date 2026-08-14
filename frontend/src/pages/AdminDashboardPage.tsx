@@ -35,6 +35,7 @@ import {
 import { useAuth } from "@/contexts/AuthContext";
 import { useTimezone } from "@/contexts/TimezoneContext";
 import { formatTimestamp as fmtTs } from "@/lib/format";
+import { CostDashboardPage } from "@/pages/CostDashboardPage";
 import type {
   AuditSummary,
   AuditSession,
@@ -78,7 +79,19 @@ function getPageNumbers(current: number, total: number): (number | null)[] {
   return [1, null, current - 1, current, current + 1, null, total];
 }
 
-export function AdminDashboardPage() {
+interface AdminDashboardPageProps {
+  canViewSessions?: boolean;
+  canViewCosts?: boolean;
+  canEditCosts?: boolean;
+  costsGroupRestriction?: string;
+}
+
+export function AdminDashboardPage({
+  canViewSessions = true,
+  canViewCosts = false,
+  canEditCosts = false,
+  costsGroupRestriction,
+}: AdminDashboardPageProps) {
   const { user, browserSessionId } = useAuth();
   const { timezone } = useTimezone();
   const useUtc = timezone === "UTC";
@@ -293,6 +306,8 @@ export function AdminDashboardPage() {
 
   return (
     <div className="space-y-6">
+      {canViewSessions && (
+      <>
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
@@ -835,6 +850,15 @@ export function AdminDashboardPage() {
             </TabsContent>
           </Tabs>
         </>
+      )}
+      </>
+      )}
+
+      {canViewCosts && (
+        <CostDashboardPage
+          readOnly={!canEditCosts}
+          groupRestriction={costsGroupRestriction}
+        />
       )}
     </div>
   );
