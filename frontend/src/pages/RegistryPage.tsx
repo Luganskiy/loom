@@ -358,9 +358,10 @@ function defaultSort(a: RegistryRecord, b: RegistryRecord): number {
 interface RegistryPageProps {
   readOnly?: boolean;
   isEndUserRole?: boolean;
+  initialSelectedRecordId?: string | null;
 }
 
-export function RegistryPage({ readOnly, isEndUserRole }: RegistryPageProps) {
+export function RegistryPage({ readOnly, isEndUserRole, initialSelectedRecordId }: RegistryPageProps) {
   const { timezone } = useTimezone();
   const { records, loading, error, fetchRecords } = useRegistry();
 
@@ -393,7 +394,7 @@ export function RegistryPage({ readOnly, isEndUserRole }: RegistryPageProps) {
     }
   };
 
-  const [selectedRecordId, setSelectedRecordId] = useState<string | null>(null);
+  const [selectedRecordId, setSelectedRecordId] = useState<string | null>(initialSelectedRecordId ?? null);
   const [recordDetail, setRecordDetail] = useState<RegistryRecordDetail | null>(null);
   const [loadingDetail, setLoadingDetail] = useState(false);
 
