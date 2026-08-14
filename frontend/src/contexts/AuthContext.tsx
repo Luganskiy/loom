@@ -43,7 +43,7 @@ export type Scope =
   | "admin:read" | "admin:write"
   | "invoke";
 
-const GROUP_SCOPES: Record<string, Scope[]> = {
+export const GROUP_SCOPES: Record<string, Scope[]> = {
   // Type groups (for UI routing - don't grant scopes directly)
   "t-admin": [],
   "t-user": [],
