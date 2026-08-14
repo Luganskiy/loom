@@ -126,21 +126,28 @@ The app uses a persona-based single-page architecture with a sidebar for workflo
 
 ### Persona Navigation (Sidebar)
 
-| Persona | Icon | Description | Required Scope | Default |
-|---------|------|-------------|----------------|---------|
-| Platform Catalog | BookOpen | Browse agents, memory resources, MCP servers, A2A agents | Always visible | Yes |
+Consolidated (issue #20) from an earlier 11-item sidebar down to 7 top-level personas. MCP Servers, A2A Agents, Tagging, Costs, and Registry are no longer standalone sidebar items — they now live as tabs/sections within a related parent persona, reusing that parent's existing tab scaffolding (Settings/Admin already had `Tabs`; Catalog/Integrations gained a collapsible-section/tab pattern respectively). This works within the existing `activePersona`-driven rendering model — no router library was introduced.
+
+| Persona | Icon | Description | Sidebar visibility gate | Default |
+|---------|------|-------------|--------------------------|---------|
+| Platform Catalog | BookOpen | Aggregate dashboard: agents, memory, MCP servers, A2A agents, and (folded in per R4) Registry records, each in its own collapsible section | `catalog:read` | Yes |
 | Agents | Bot | Deploy new agents or import existing ones | `agent:read` or `agent:write` | |
 | Memory | Brain | Create and manage AgentCore Memory resources | `memory:read` or `memory:write` | |
 | Security Admin | Shield | Manage roles, authorizers, credentials, permissions | `security:read` or `security:write` | |
-| Tags | Tags | Manage tag policies and tag profiles | Always visible | |
-| Settings | Settings | Manage display preferences | Always visible | |
-| MCP Servers | Network | Register and manage MCP servers, tools, and access control | `mcp:read` or `mcp:write` | |
-| A2A Agents | Users | Register and manage A2A agents, view Agent Cards, and control access | `a2a:read` or `a2a:write` | |
-| Registry | Library | Browse and manage AWS Agent Registry records for governance and discovery | `registry:read` or `registry:write` | |
-| Costs | DollarSign | Cost dashboard with estimated costs, actual runtime costs from CloudWatch, and cost estimation settings | `catalog:read` | |
-| Admin Dashboard | BarChart3 | Platform usage analytics: login tracking, action tracking, page navigation, per-session drill-down, summary cards and charts | `isAdmin` (super-admins only) | |
+| Integrations | Network | MCP Servers and A2A Agents tabs (formerly two standalone personas) | `mcp:read`/`mcp:write` or `a2a:read`/`a2a:write` (either grants entry; each tab is independently gated — see below) | |
+| Settings | Settings | Display preferences, models, networking, infrastructure, and (per R2) a Tagging tab | `settings:read`, `tagging:read`, or `tagging:write` (any grants entry; the Tagging tab itself requires `tagging:read`) | |
+| Admin Dashboard | BarChart3 | Platform usage analytics (Sessions/Actions/Page Views tabs) and (per R3) a Costs section | `admin:read`, `costs:read`, or `costs:write` (any grants entry; analytics tabs require `admin:read`, the Costs section requires `costs:read`) | |
 
-Sidebar items are conditionally rendered based on the user's scopes derived from their Cognito group membership. When auth is not configured, all items are visible.
+Sidebar items are conditionally rendered based on the user's scopes derived from their Cognito group membership (`effectiveHasScope`). When auth is not configured, all items are visible.
+
+**Scope-gate reference (per-tab visibility vs. edit-ability), documented at the `Persona` type declaration in `App.tsx`:**
+
+- **Integrations** sidebar item: `mcp:read || a2a:read`. MCP tab visible iff `mcp:read`, editable iff `mcp:write`. A2A tab visible iff `a2a:read`, editable iff `a2a:write`. If the caller has only one of the two read scopes, `IntegrationsPage` renders that page directly without the `Tabs` shell rather than showing an empty tab list.
+- **Settings > Tagging tab**: visible iff `tagging:read`, editable iff `tagging:write`. Previously gated by `agent:write || security:write || memory:write`, which had nothing to do with tag management — every currently-defined `GROUP_SCOPES` entry already carries `tagging:read`/`tagging:write` alongside those write scopes, so this was a no-op change for all existing groups and a correctness fix for future ones.
+- **Admin > Costs section**: visible iff `costs:read`, editable iff `costs:write`. Previously gated by `catalog:read`, unrelated to cost data. `g-admins-super` and `g-admins-demo` already have `costs:read`/`costs:write` in `GROUP_SCOPES` (the latter without `admin:read`), so Admin's own sidebar/page gate was widened to `admin:read || costs:read || costs:write` — otherwise a costs-only group would lose Costs access entirely once it moved under a page gated solely by `admin:read`. The existing Sessions/Actions/Page Views tabs remain specifically gated by `admin:read` (rendered only when `canViewSessions` is true) so a costs-only caller sees just the Costs section, not an empty analytics shell.
+- **Catalog > Registry section**: visible iff `registry:read`, editable iff `registry:write` — unchanged from the standalone Registry page's gate. Clicking a record drills into the full `RegistryPage` component (list + `LifecycleTimeline`/`DescriptorView` detail) rendered inline within Catalog via an `initialSelectedRecordId` prop, rather than duplicating that logic in `CatalogPage`.
+
+`GROUP_SCOPES` was previously duplicated between `AuthContext.tsx` and `App.tsx` (manually kept in sync, and had already drifted — the `App.tsx` copy was missing `mcp:read` for the `g-users-*` groups). `App.tsx` now imports the canonical `GROUP_SCOPES` from `AuthContext.tsx` (exported for this purpose) rather than maintaining its own copy.
 
 The sidebar also contains:
 - User indicator with username display and logout button (when authenticated)
@@ -171,7 +178,8 @@ Catalog  >  [Agent Name]  >  [Session ID]
 **Content:**
 - Page description: "Browse and manage registered agents and resources." with estimates disclaimer: "Costs for agents and memory resources are *estimates*."
 - Page header: "Platform Catalog" with card/table view toggle (top-right)
-- Organized into collapsible sections: Agents, Memory Resources, MCP Servers, A2A Agents. Each section header has a ChevronRight/ChevronDown toggle. Collapse state persisted to `localStorage` under `loom:collapsedSections:catalog`.
+- Organized into collapsible sections: Agents, Memory Resources, MCP Servers, A2A Agents, and (since issue #20) Registry. Each section header has a ChevronRight/ChevronDown toggle. Collapse state persisted to `localStorage` under `loom:collapsedSections:catalog`.
+- **Registry section** (`canViewRegistry`, gated by `registry:read`): card/table grid of registry records (`RegistryRecord`: name, descriptor type, status badge via `RegistryStatusBadge`, description, created timestamp), fetched independently of the other sections via its own loading state so a caller lacking `registry:read` never issues the `listRegistryRecords` call. Clicking a record replaces Catalog's aggregate view with the full `RegistryPage` component (list + `LifecycleTimeline`/`DescriptorView` detail), opened directly to that record via `initialSelectedRecordId`, with a "&larr; Back to Catalog" button returning to the aggregate view. `isEndUserRole` is forwarded so end-users see only `APPROVED` records, matching the standalone page's prior behavior.
 - Tag-based filter bar above the agents grid, with multi-select dropdowns (checkbox-based) for each tag policy with `show_on_card=true`. Client-side AND filtering with "Clear filters" button and agent count display (e.g., "Showing 3 of 12 agents")
 - Card/table view toggle applies to all sections on the page
 - Agents section: responsive grid of `AgentCard` components (3 columns on large screens) or table view
@@ -403,7 +411,23 @@ When no memory resources exist: centered muted text "No memory resources yet. Ad
 
 ---
 
+## 8-integrations. Integrations View
+
+**Purpose:** Consolidated (issue #20) sidebar entry for the two resource types that share an identical list/table/detail pattern — MCP Servers and A2A Agents — presented as tabs of one page rather than two standalone personas.
+
+`IntegrationsPage.tsx` wraps the existing `McpServersPage`/`A2aAgentsPage` components ([8a](#8a-mcp-servers-view-mcp-server-administration)/[8b](#8b-a2a-agents-view-a2a-agent-administration), both unchanged internally) with a shadcn `Tabs`. Each tab is independently gated:
+
+- If the caller has both `mcp:read` and `a2a:read`, both tabs render inside the `Tabs`/`TabsList`/`TabsTrigger` shell.
+- If the caller has only one of the two read scopes, that page renders directly with no `Tabs` wrapper — a single-scope caller never sees an empty/disabled sibling tab.
+- Edit affordances (`readOnly` passed to each inner page) are gated by `mcp:write`/`a2a:write` respectively, independent of the other tab.
+
+`viewMode` state (cards/table) is maintained separately per resource type in `App.tsx` (`mcpViewMode`/`a2aViewMode`), unchanged from before the consolidation. Navigating from Catalog's MCP/A2A sections (`onNavigateToMcp`/`onNavigateToA2a`) sets `activePersona("integrations")` plus `integrationsTab`/`pendingMcpId`/`pendingA2aId` so the correct tab and record open directly.
+
+---
+
 ## 8a. MCP Servers View (MCP Server Administration)
+
+**Note:** Since issue #20, this component is rendered as the "MCP Servers" tab of `IntegrationsPage` (alongside A2A Agents, [8b](#8b-a2a-agents-view-a2a-agent-administration)) rather than as a standalone top-level sidebar persona. The component itself (`McpServersPage.tsx`) and everything described below is unchanged — only its parent/mounting point moved. See [3. Application Shell](#3-application-shell) for the tab-level scope gating.
 
 **Purpose:** Register and manage MCP (Model Context Protocol) servers, view available tools, and control persona access. MCP servers can be selected during agent deployment for runtime integration.
 
@@ -450,6 +474,8 @@ Create/edit form with:
 
 ## 8b. A2A Agents View (A2A Agent Administration)
 
+**Note:** Since issue #20, this component is rendered as the "A2A Agents" tab of `IntegrationsPage` (alongside MCP Servers, [8a](#8a-mcp-servers-view-mcp-server-administration)) rather than as a standalone top-level sidebar persona. The component itself (`A2aAgentsPage.tsx`) and everything described below is unchanged — only its parent/mounting point moved.
+
 **Purpose:** Register and manage A2A (Agent-to-Agent) protocol integrations, view structured Agent Card information, and control persona access to agent skills.
 
 **Layout:** Page header "A2A Agent Administration" with card/table view toggle (top-right), followed by "Add A2A Agent" button, create form (toggle), and agent list (cards default or table).
@@ -494,19 +520,19 @@ Create/edit form with:
 
 ## 9. Settings View
 
-**Purpose:** Manage display preferences and platform configuration.
+**Purpose:** Manage display preferences, platform configuration, and (per the issue #20 consolidation) tag policies/profiles via a Tagging tab.
 
 **Content:**
-- Page header: "Settings" with description "Manage display preferences."
-- **Preferences** section: Theme selector (grouped by Light/Dark using SelectGroup/SelectLabel, always drops down via `position="popper"`) and Timezone selector (local/UTC)
-- **Enabled Models** section (requires `settings:read`/`settings:write`): Split into a Bedrock block and an optional LiteLLM block (connection toggle, base URLs, write-only master key, Refresh button) — see [17. Alternate LLM Providers](#17-alternate-llm-providers-litellm-proxy). Per-vendor grouped checkboxes within each provider block for selecting which models are available platform-wide, plus a text filter. When none are selected for a provider, all of that provider's models are available. Save button with confirmation indicator. Status text shows count (e.g., "8 of 22 models enabled"). Uses `groupModels()` utility for alphabetical vendor grouping. Configuration is saved via `PUT /api/settings/models`.
-- Always visible in the sidebar (no scope guard for visibility)
+- Page header: "Settings" with description "Manage preferences, models, networking, infrastructure, and tagging."
+- Tab bar (manual tab-pill pattern, `SettingsTab = "general" | "models" | "networking" | "infrastructure" | "tagging"`): General, Models, Networking, Infrastructure always shown; **Tagging** tab conditionally appended only when the caller has `tagging:read` (see [3. Application Shell](#3-application-shell) for the scope-gate rationale).
+- **General tab — Preferences** section: Theme selector (grouped by Light/Dark using SelectGroup/SelectLabel, always drops down via `position="popper"`) and Timezone selector (local/UTC)
+- **Models tab — Enabled Models** section (requires `settings:read`/`settings:write`): Split into a Bedrock block and an optional LiteLLM block (connection toggle, base URLs, write-only master key, Refresh button) — see [17. Alternate LLM Providers](#17-alternate-llm-providers-litellm-proxy). Per-vendor grouped checkboxes within each provider block for selecting which models are available platform-wide, plus a text filter. When none are selected for a provider, all of that provider's models are available. Save button with confirmation indicator. Status text shows count (e.g., "8 of 22 models enabled"). Uses `groupModels()` utility for alphabetical vendor grouping. Configuration is saved via `PUT /api/settings/models`.
+- **Tagging tab**: renders `TaggingPage`'s content (see below) via `readOnly={!canEditTagging}` and `userGroups` props passed from `App.tsx`.
+- Sidebar visibility gate: `settings:read || tagging:read || tagging:write` (any grants entry to the Settings persona; the Tagging tab itself requires `tagging:read` independently).
 
----
+### Tagging (Settings Tab)
 
-## 9a. Tagging View
-
-**Purpose:** Manage tag policies (platform + custom) and tag profiles.
+**Purpose:** Manage tag policies (platform + custom) and tag profiles. Formerly a standalone top-level "Tagging" sidebar persona; consolidated (issue #20) into a Settings tab, rendering the same `TaggingPage` component unchanged.
 
 **Tag Designations:**
 - `platform:required` — tags with `loom:` prefix. Required for all resources. Read-only in the policy list (Lock icon). Always shown as input fields in the profile form.
@@ -514,7 +540,6 @@ Create/edit form with:
 - Designation is computed from the key (not stored). The legacy `source` column is retained in the DB for backward compatibility but is not exposed in the API or UI.
 
 **Content:**
-- Page header: "Tagging" with description "Manage tag policies and tag profiles."
 - **Tag Policies** section (top): displays `platform:required` tags as read-only rows with a Lock icon and designation badge, followed by `custom:optional` tags (editable/deletable with designation badge). "Add Custom Tag" button shows a form with: key (text, required), default value (optional text), show on card (checkbox, default true). Custom tags are always created as `required=false`. Sort toggle (A-Z/Z-A) available for policies and profiles.
 - **Tag Profiles** section (below policies): list, create, edit, delete named tag presets
   - Each profile card shows: name, timestamps, and tag value badges
@@ -523,9 +548,9 @@ Create/edit form with:
     1. **Platform (Required)** — input fields for each `platform:required` tag (mandatory, marked with `*`)
     2. **Custom (Optional)** — checkbox per custom tag; checking reveals a value input. Unchecking removes the tag from the profile.
   - Form-fill import: JSON import via `JsonConfigSection` auto-populates profile form with tag key-value pairs from the imported JSON
-  - Accessible to all scopes; `*:write` can create, edit, and delete; `*:read` can only view
+  - `tagging:write` can create, edit, and delete; `tagging:read` can only view (`readOnly={!canEditTagging}`, i.e. `!hasScope("tagging:write")`)
   - Delete with inline confirmation (Confirm/Cancel)
-- Always visible in the sidebar (no scope guard for visibility)
+- Tab visibility gate: `tagging:read` (see [3. Application Shell](#3-application-shell))
 
 ---
 
@@ -548,6 +573,8 @@ Create/edit form with:
 
 ### Persona-Based Navigation
 Chose a sidebar with persona-based workflows over traditional tab navigation. Each persona represents a distinct user role (catalog browser, agent builder, security admin, memory manager) with its own page and feature set. The sidebar provides persistent access to all personas and includes theme/timezone controls.
+
+**Consolidation via tabs within a persona (issue #20):** as the sidebar grew to 11 items, several had become structurally near-duplicates (MCP Servers/A2A Agents) or thin enough to live inside a related page (Tagging, Costs, Registry). Rather than introducing a router or flattening personas into a deeper hierarchy, these were folded into existing or new tab/collapsible-section scaffolding within a parent persona — `IntegrationsPage`'s `Tabs` (new), `SettingsPage`'s existing manual tab-pill pattern, `AdminDashboardPage`'s existing shadcn `Tabs`, and `CatalogPage`'s existing collapsible-section pattern. This kept the sidebar-count reduction (11 → 7) without requiring `activePersona`'s lifted-state model to change shape, and without any scope becoming more permissive as a side effect of the move (see [3. Application Shell](#3-application-shell) for the per-tab scope-gate audit this required).
 
 ### Navigation: Lifted State vs. Router
 Chose lifted state in `App.tsx` over React Router. Persona selection and drill-down navigation (within Catalog) are managed via state variables. A router would add unnecessary complexity for this use case.
@@ -645,9 +672,9 @@ Cognito client secrets are password-masked in forms. Secrets are sent to the bac
     - `g-admins-security`, `g-admins-memory`, `g-admins-mcp`, `g-admins-a2a`: Domain-specific admin scopes
     - `g-admins-registry`: `mcp:read`, `a2a:read`, `registry:read`, `registry:write`, `settings:read`, `settings:write`, `tagging:read`
     - `g-users-demo`, `g-users-test`, `g-users-strategics`: invoke + group-filtered read access
-- Sidebar visibility is controlled by scopes — each persona item is rendered only when the user has the corresponding `*:read` or `*:write` scope. Platform Catalog, Tagging, and Settings are always visible.
+- Sidebar visibility is controlled by scopes — each persona item is rendered only when the user has one of its gating `*:read`/`*:write` scopes (see [3. Application Shell](#3-application-shell) for the current 7-persona list and each one's exact gate expression, post issue-#20 consolidation). None are unconditionally visible; Platform Catalog is the only one gated by a single always-broadly-held scope (`catalog:read`).
 - Write operations are gated by a `readOnly` prop propagated from `App.tsx` through page components to individual UI elements. When `readOnly` is true, add/edit/delete buttons are disabled or hidden.
-- Pages and their `readOnly` mapping: `AgentListPage` and `CatalogPage` use `!hasScope("agent:write")`, `SecurityAdminPage` uses `!hasScope("security:write")`, `MemoryManagementPage` uses `!hasScope("memory:write")`, `TaggingPage` uses `!hasScope("tagging:write")`.
+- Pages and their `readOnly` mapping: `AgentListPage` and `CatalogPage` use `!hasScope("agent:write")`, `SecurityAdminPage` uses `!hasScope("security:write")`, `MemoryManagementPage` uses `!hasScope("memory:write")`, `TaggingPage` uses `!hasScope("tagging:write")` (now surfaced as `canEditTagging` through `SettingsPage`), `McpServersPage`/`A2aAgentsPage` use `!hasScope("mcp:write")`/`!hasScope("a2a:write")` (surfaced as `canEditMcp`/`canEditA2a` through `IntegrationsPage`), `CostDashboardPage` uses `!hasScope("costs:write")` (surfaced as `canEditCosts` through `AdminDashboardPage`), and the Registry section within `CatalogPage` uses `!hasScope("registry:write")`.
 - Components that respect `readOnly` and `userGroups`: `AgentCard`, `AgentListPage`, `CatalogPage`, `SecurityAdminPage`, `RoleManagementPanel`, `AuthorizerManagementPanel`, `PermissionRequestsPanel`, `MemoryManagementPage`, `MemoryManagementPanel`, `MemoryCard`, `TaggingPage`.
 - Demo-admin restrictions: Delete buttons hidden for resources not in demo group via `userGroups` prop. Tag policy edit restricted to super-admins only. Tag profile edit restricted by group ownership.
 
@@ -733,8 +760,8 @@ The invoke panel's credential dropdown includes a "Manual token" sentinel value.
 
 | View | Persona | Description |
 |------|---------|-------------|
-| A2aAgentsPage | A2A Agents | A2A agent CRUD, agent detail with Agent Card and Access tabs, card/table views |
-| CostDashboardPage | Costs | Cost dashboard with time-range selector (7d/30d/90d/All), summary cards (Total Cost, Model Tokens, Runtime, Memory), Estimated Costs table with per-agent breakdown and methodology formulas, Actual Costs with separate Runtime and Memory sub-sections, collapsible agent groups for Runtime, consolidated per-resource rows for Memory, sortable columns |
+| A2aAgentsPage | Integrations (A2A tab) | A2A agent CRUD, agent detail with Agent Card and Access tabs, card/table views. Rendered as a tab within `IntegrationsPage`, alongside McpServersPage — see [3. Application Shell](#3-application-shell) for the consolidation. |
+| CostDashboardPage | Admin Dashboard (Costs section) | Cost dashboard with time-range selector (7d/30d/90d/All), summary cards (Total Cost, Model Tokens, Runtime, Memory), Estimated Costs table with per-agent breakdown and methodology formulas, Actual Costs with separate Runtime and Memory sub-sections, collapsible agent groups for Runtime, consolidated per-resource rows for Memory, sortable columns. Rendered within `AdminDashboardPage`, gated independently by `costs:read`/`costs:write`. |
 
 ### Token Usage and Cost Display
 
@@ -759,7 +786,13 @@ The invoke panel's credential dropdown includes a "Manual token" sentinel value.
 
 ## 12. Admin Dashboard
 
-**Purpose:** Platform usage analytics for super-admins. Accessible only via `isAdmin` check — the sidebar item is hidden for non-admin users.
+**Purpose:** Platform usage analytics (login/action/page-view tracking, Sessions/Actions/Page Views tabs) and, since issue #20, a Costs section ([see below](#costs-admin-dashboard-section)).
+
+**Sidebar visibility gate:** `admin:read || costs:read || costs:write` — any of the three grants entry to the Admin persona. Within the page, the analytics tabs render only when `canViewSessions` (`admin:read`) is true, and the Costs section renders only when `canViewCosts` (`costs:read`) is true, so a caller with only `costs:read` sees the Costs section without an empty analytics shell, and vice versa. See [3. Application Shell](#3-application-shell) for the full scope-gate rationale.
+
+### Costs (Admin Dashboard Section)
+
+Formerly a standalone top-level "Costs" sidebar persona (`CostDashboardPage.tsx`), gated by `catalog:read` — unrelated to cost data. Consolidated (issue #20) into a section within `AdminDashboardPage`, now gated by `costs:read` (visibility) / `costs:write` (edit, via `readOnly={!canEditCosts}`). The component itself is unchanged; see [11. Design Decisions](#11-design-decisions) and the `CostDashboardPage` entry in the Views table above for its content.
 
 **Auth context additions:**
 - `browserSessionId: string | null` — UUID generated at login via `crypto.randomUUID()`, stored in React state (not localStorage). Resets on page refresh or re-login to distinguish usage sessions.
