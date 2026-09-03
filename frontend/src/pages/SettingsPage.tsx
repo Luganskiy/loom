@@ -16,10 +16,17 @@ import { fetchProviders } from "@/api/agents";
 import { groupModels } from "@/lib/models";
 import type { ModelOption, Provider } from "@/api/types";
 import { VpcConfigPanel } from "@/components/VpcConfigPanel";
+import { TaggingPage } from "@/pages/TaggingPage";
 
-type SettingsTab = "general" | "models" | "networking" | "infrastructure";
+type SettingsTab = "general" | "models" | "networking" | "infrastructure" | "tagging";
 
-export function SettingsPage() {
+interface SettingsPageProps {
+  canViewTagging?: boolean;
+  canEditTagging?: boolean;
+  userGroups?: string[];
+}
+
+export function SettingsPage({ canViewTagging = false, canEditTagging = false, userGroups = [] }: SettingsPageProps) {
   const { t, i18n } = useTranslation();
   const { timezone, setTimezone } = useTimezone();
   const localTz = Intl.DateTimeFormat().resolvedOptions().timeZone;
@@ -184,6 +191,7 @@ export function SettingsPage() {
     { key: "models", label: t("settings.tabs.models") },
     { key: "networking", label: t("settings.tabs.networking") },
     { key: "infrastructure", label: t("settings.tabs.infrastructure") },
+    ...(canViewTagging ? [{ key: "tagging" as const, label: t("settings.tabs.tagging") }] : []),
   ];
 
   return (
@@ -574,6 +582,10 @@ export function SettingsPage() {
             </div>
           </div>
         </div>
+      )}
+
+      {activeTab === "tagging" && canViewTagging && (
+        <TaggingPage readOnly={!canEditTagging} userGroups={userGroups} />
       )}
     </div>
   );

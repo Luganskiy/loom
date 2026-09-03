@@ -35,6 +35,7 @@ import {
 import { useAuth } from "@/contexts/AuthContext";
 import { useTimezone } from "@/contexts/TimezoneContext";
 import { formatTimestamp as fmtTs } from "@/lib/format";
+import { CostDashboardPage } from "@/pages/CostDashboardPage";
 import type {
   AuditSummary,
   AuditSession,
@@ -78,7 +79,19 @@ function getPageNumbers(current: number, total: number): (number | null)[] {
   return [1, null, current - 1, current, current + 1, null, total];
 }
 
-export function AdminDashboardPage() {
+interface AdminDashboardPageProps {
+  canViewSessions?: boolean;
+  canViewCosts?: boolean;
+  canEditCosts?: boolean;
+  costsGroupRestriction?: string;
+}
+
+export function AdminDashboardPage({
+  canViewSessions = true,
+  canViewCosts = false,
+  canEditCosts = false,
+  costsGroupRestriction,
+}: AdminDashboardPageProps) {
   const { user, browserSessionId } = useAuth();
   const { timezone } = useTimezone();
   const useUtc = timezone === "UTC";
@@ -291,12 +304,14 @@ export function AdminDashboardPage() {
   const pagedActions = sortedActions.slice((actionPage - 1) * PAGE_SIZE, actionPage * PAGE_SIZE);
   const pagedPageViews = sortedPageViews.slice((pvPage - 1) * PAGE_SIZE, pvPage * PAGE_SIZE);
 
-  return (
+  const dashboardContent = (
     <div className="space-y-6">
+      {canViewSessions && (
+      <>
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-lg font-semibold">Admin Dashboard</h2>
+          <h2 className="text-lg font-semibold">User Activity</h2>
           <p className="text-sm text-muted-foreground">User activity and audit trail</p>
         </div>
         <div className="flex items-center gap-3">
@@ -836,6 +851,35 @@ export function AdminDashboardPage() {
           </Tabs>
         </>
       )}
+      </>
+      )}
     </div>
   );
+
+  const costsContent = (
+    <CostDashboardPage
+      readOnly={!canEditCosts}
+      groupRestriction={costsGroupRestriction}
+    />
+  );
+
+  if (canViewSessions && canViewCosts) {
+    return (
+      <Tabs defaultValue="dashboard" onValueChange={handleAdminTabChange}>
+        <TabsList>
+          <TabsTrigger value="dashboard">User Activity</TabsTrigger>
+          <TabsTrigger value="costs">Costs</TabsTrigger>
+        </TabsList>
+        <TabsContent value="dashboard" className="mt-4">
+          {dashboardContent}
+        </TabsContent>
+        <TabsContent value="costs" className="mt-4">
+          {costsContent}
+        </TabsContent>
+      </Tabs>
+    );
+  }
+
+  if (canViewCosts) return costsContent;
+  return dashboardContent;
 }

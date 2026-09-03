@@ -8,26 +8,31 @@
     "dark": "Dark"
   },
   "nav": {
+    "sections": {
+      "home": "Home",
+      "build": "Build",
+      "operate": "Operate",
+      "system": "System"
+    },
     "catalog": "Catalog",
     "agents": "Agents",
     "memory": "Memory",
     "security": "Security",
-    "registry": "Registry",
+    "integrations": "Integrations",
     "mcpServers": "MCP Servers",
     "a2aAgents": "A2A Agents",
-    "tagging": "Tagging",
-    "costs": "Costs",
-    "admin": "Admin",
+    "analytics": "Analytics",
     "settings": "Settings"
   },
   "settings": {
     "title": "Settings",
-    "description": "Manage preferences, models, networking, and infrastructure.",
+    "description": "Manage preferences, models, networking, infrastructure, and tagging.",
     "tabs": {
       "general": "General",
       "models": "Models",
       "networking": "Networking",
-      "infrastructure": "Infrastructure"
+      "infrastructure": "Infrastructure",
+      "tagging": "Tagging"
     },
     "preferences": {
       "title": "Preferences",

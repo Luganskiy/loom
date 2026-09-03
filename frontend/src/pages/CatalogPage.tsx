@@ -27,7 +27,9 @@ import { listA2aAgents } from "@/api/a2a";
 import { listTagPolicies, getRegistryConfig } from "@/api/settings";
 import { ApiError } from "@/api/client";
 import { RegistryStatusBadge } from "@/components/RegistryStatusBadge";
-import type { AgentResponse, MemoryResponse, McpServer, A2aAgent, TagPolicy } from "@/api/types";
+import { RegistryPage } from "@/pages/RegistryPage";
+import * as registryApi from "@/api/registry";
+import type { AgentResponse, MemoryResponse, McpServer, A2aAgent, TagPolicy, RegistryRecord } from "@/api/types";
 
 interface CatalogPageProps {
   agents: AgentResponse[];
@@ -43,6 +45,9 @@ interface CatalogPageProps {
   canViewMemories?: boolean;
   canViewMcp?: boolean;
   canViewA2a?: boolean;
+  canViewRegistry?: boolean;
+  registryReadOnly?: boolean;
+  isEndUserRole?: boolean;
   groupRestriction?: string;
   userGroups?: string[];
   onNavigateToMcp?: (serverId: number) => void;
@@ -63,6 +68,9 @@ export function CatalogPage({
   canViewMemories = true,
   canViewMcp = true,
   canViewA2a = true,
+  canViewRegistry = false,
+  registryReadOnly,
+  isEndUserRole,
   groupRestriction,
   userGroups = [],
   onNavigateToMcp,
@@ -75,6 +83,7 @@ export function CatalogPage({
   const [tagFilters, setTagFilters] = useState<Record<string, string[]>>(() => {
     try { return JSON.parse(localStorage.getItem("loom:tagFilters:catalog") || "{}") as Record<string, string[]>; } catch { return {}; }
   });
+  const [selectedRegistryRecordId, setSelectedRegistryRecordId] = useState<string | null>(null);
 
   useEffect(() => {
     // Only fetch tag policies if user can view any section
@@ -140,6 +149,9 @@ export function CatalogPage({
   const [a2aSortDir, setA2aSortDir] = useState<SortDirection>(() => loadSortDirection("catalog-a2a"));
   const [a2aTableCol, setA2aTableCol] = useState<string | null>("name");
   const [a2aTableDir, setA2aTableDir] = useState<SortDirection>("asc");
+  const [registrySortDir, setRegistrySortDir] = useState<SortDirection>(() => loadSortDirection("catalog-registry"));
+  const [registryTableCol, setRegistryTableCol] = useState<string | null>("name");
+  const [registryTableDir, setRegistryTableDir] = useState<SortDirection>("asc");
 
   const handleAgentTableSort = (col: string) => {
     if (agentTableCol === col) {
@@ -171,6 +183,14 @@ export function CatalogPage({
     } else {
       setA2aTableCol(col);
       setA2aTableDir("asc");
+    }
+  };
+  const handleRegistryTableSort = (col: string) => {
+    if (registryTableCol === col) {
+      setRegistryTableDir(registryTableDir === "asc" ? "desc" : "asc");
+    } else {
+      setRegistryTableCol(col);
+      setRegistryTableDir("asc");
     }
   };
 
@@ -223,6 +243,30 @@ export function CatalogPage({
   useEffect(() => {
     void fetchA2aData();
   }, [fetchA2aData]);
+
+  // Registry data
+  const [registryRecords, setRegistryRecords] = useState<RegistryRecord[]>([]);
+  const [registryLoading, setRegistryLoading] = useState(true);
+
+  const fetchRegistryData = useCallback(async () => {
+    if (!canViewRegistry) {
+      setRegistryLoading(false);
+      return;
+    }
+    try {
+      const params = isEndUserRole ? { status: "APPROVED" } : undefined;
+      const data = await registryApi.listRegistryRecords(params);
+      setRegistryRecords(data);
+    } catch {
+      // silently ignore
+    } finally {
+      setRegistryLoading(false);
+    }
+  }, [canViewRegistry, isEndUserRole]);
+
+  useEffect(() => {
+    void fetchRegistryData();
+  }, [fetchRegistryData]);
 
   // Memory data
   const [memories, setMemories] = useState<MemoryResponse[]>([]);
@@ -330,6 +374,25 @@ export function CatalogPage({
   };
 
 
+
+  // Registry drill-down: render the full RegistryPage (list+detail) in place
+  // of Catalog's aggregate view, preserving Registry's existing detail
+  // drill-down (LifecycleTimeline/DescriptorView) as a sub-view rather than
+  // duplicating that logic here.
+  if (selectedRegistryRecordId) {
+    return (
+      <div className="space-y-4">
+        <Button variant="ghost" size="sm" onClick={() => setSelectedRegistryRecordId(null)}>
+          &larr; Back to Catalog
+        </Button>
+        <RegistryPage
+          readOnly={registryReadOnly}
+          isEndUserRole={isEndUserRole}
+          initialSelectedRecordId={selectedRegistryRecordId}
+        />
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -883,6 +946,108 @@ export function CatalogPage({
                     <TableCell className="text-xs text-muted-foreground">{agent.auth_type === "oauth2" ? "OAuth2" : "None"}</TableCell>
                     <TableCell className="text-xs text-muted-foreground">
                       {formatTimestamp(agent.created_at, timezone)}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        ))}
+      </section>
+      )}
+
+      {/* Registry Section */}
+      {canViewRegistry && (
+      <section className="space-y-3">
+        <div className="flex items-center justify-between">
+          <button type="button" className="flex items-center gap-1 text-sm font-medium hover:text-foreground/80" onClick={() => toggleSection("registry")}>
+            {collapsedSections.has("registry") ? <ChevronRight className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+            Registry
+          </button>
+          {!collapsedSections.has("registry") && <SortButton direction={registrySortDir} onClick={() => setRegistrySortDir(toggleSortDirection("catalog-registry", registrySortDir))} />}
+        </div>
+
+        {!collapsedSections.has("registry") && (registryLoading ? (
+          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+            {Array.from({ length: 2 }).map((_, i) => (
+              <Skeleton key={i} className="h-32" />
+            ))}
+          </div>
+        ) : registryRecords.length === 0 ? (
+          <p className="text-sm text-muted-foreground py-8 text-center">
+            No registry records found.
+          </p>
+        ) : viewMode === "cards" ? (
+          <SortableCardGrid
+            items={registryRecords}
+            getId={(r) => r.record_id}
+            getName={(r) => r.name}
+            storageKey="catalog-registry"
+            sortDirection={registrySortDir}
+            onSortDirectionChange={(d) => { if (d) { setRegistrySortDir(d); saveSortDirection("catalog-registry", d); } }}
+            renderItem={(record) => (
+              <Card
+                className="py-3 gap-1 transition-colors hover:bg-accent/50 cursor-pointer"
+                onClick={() => setSelectedRegistryRecordId(record.record_id)}
+              >
+                <CardHeader className="gap-0 pb-2">
+                  <div className="flex items-center gap-2">
+                    <div className="text-sm font-medium truncate" title={record.name}>
+                      {record.name}
+                    </div>
+                    <RegistryStatusBadge status={record.status} showUnregistered registryEnabled={registryEnabled} />
+                  </div>
+                </CardHeader>
+                <CardContent className="text-xs text-muted-foreground">
+                  <div className="rounded border bg-input-bg p-3 space-y-0.5">
+                    {record.description && (
+                      <div className="truncate" title={record.description}>{record.description}</div>
+                    )}
+                    <div><span className="text-muted-foreground/70">Type:</span> {record.descriptor_type}</div>
+                    {record.created_at && (
+                      <div><span className="text-muted-foreground/70">Created:</span> {formatTimestamp(record.created_at, timezone)}</div>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+          />
+        ) : (
+          <div className="rounded-md border overflow-hidden">
+            <Table className="table-fixed">
+              <TableHeader>
+                <TableRow className="bg-card hover:bg-card">
+                  <SortableTableHead column="name" activeColumn={registryTableCol} direction={registryTableDir} onSort={handleRegistryTableSort} className="w-[28%]">Name</SortableTableHead>
+                  <SortableTableHead column="type" activeColumn={registryTableCol} direction={registryTableDir} onSort={handleRegistryTableSort} className="w-[16%]">Type</SortableTableHead>
+                  <SortableTableHead column="status" activeColumn={registryTableCol} direction={registryTableDir} onSort={handleRegistryTableSort} className="w-[16%]">Status</SortableTableHead>
+                  <SortableTableHead column="description" activeColumn={registryTableCol} direction={registryTableDir} onSort={handleRegistryTableSort} className="w-[24%]">Description</SortableTableHead>
+                  <SortableTableHead column="created" activeColumn={registryTableCol} direction={registryTableDir} onSort={handleRegistryTableSort} className="w-[16%]">Created</SortableTableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {sortRows(registryRecords, registryTableCol, registryTableDir, {
+                  name: (r) => r.name,
+                  type: (r) => r.descriptor_type,
+                  status: (r) => r.status,
+                  description: (r) => r.description ?? "",
+                  created: (r) => r.created_at ?? "",
+                }).map((record) => (
+                  <TableRow
+                    key={record.record_id}
+                    className="bg-input-bg hover:bg-input-bg/80 cursor-pointer"
+                    onClick={() => setSelectedRegistryRecordId(record.record_id)}
+                  >
+                    <TableCell className="font-medium text-sm">
+                      <div className="flex items-center gap-2">
+                        {record.name}
+                        <RegistryStatusBadge status={record.status} showUnregistered registryEnabled={registryEnabled} />
+                      </div>
+                    </TableCell>
+                    <TableCell className="text-xs text-muted-foreground">{record.descriptor_type}</TableCell>
+                    <TableCell className="text-xs text-muted-foreground">{record.status}</TableCell>
+                    <TableCell className="text-xs text-muted-foreground truncate">{record.description}</TableCell>
+                    <TableCell className="text-xs text-muted-foreground">
+                      {formatTimestamp(record.created_at, timezone)}
                     </TableCell>
                   </TableRow>
                 ))}

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, Children } from "react";
 import { useTranslation } from "react-i18next";
 import { Toaster } from "@/components/ui/sonner";
 import { toast } from "sonner";
@@ -28,66 +28,42 @@ import { InvocationDetailPage } from "@/pages/InvocationDetailPage";
 import { SecurityAdminPage } from "@/pages/SecurityAdminPage";
 import { MemoryManagementPage } from "@/pages/MemoryManagementPage";
 import { SettingsPage } from "@/pages/SettingsPage";
-import { TaggingPage } from "@/pages/TaggingPage";
-import { McpServersPage } from "@/pages/McpServersPage";
-import { A2aAgentsPage } from "@/pages/A2aAgentsPage";
-import { RegistryPage } from "@/pages/RegistryPage";
-import { CostDashboardPage } from "@/pages/CostDashboardPage";
+import { IntegrationsPage } from "@/pages/IntegrationsPage";
 import type { SessionResponse, InvocationResponse } from "@/api/types";
 import { getRegistryConfig } from "@/api/settings";
-import { AuthProvider, useAuth, type Scope } from "@/contexts/AuthContext";
+import { AuthProvider, useAuth, GROUP_SCOPES, type Scope } from "@/contexts/AuthContext";
 import { LoginPage } from "@/pages/LoginPage";
-import { BookOpen, Shield, Bot, Brain, Network, Users, LogOut, User, Settings, Eye, Tags, DollarSign, BarChart3, Palette, Library } from "lucide-react";
+import { BookOpen, Shield, Bot, Brain, Network, LogOut, User, Settings, Eye, BarChart3, Palette } from "lucide-react";
 import { AdminDashboardPage } from "./pages/AdminDashboardPage";
 import { ChatPage } from "./pages/ChatPage";
 import { OAuthLinkCallbackPage } from "./pages/OAuthLinkCallbackPage";
 import { recordPageView, sendBeaconPageView, trackAction } from "./api/audit";
 
-type Persona = "catalog" | "security" | "builder" | "memory" | "tagging" | "settings" | "mcp" | "a2a" | "costs" | "admin" | "registry";
-
-const GROUP_SCOPES: Record<string, Scope[]> = {
-  // Type groups (for UI routing - don't grant scopes directly)
-  "t-admin": [],
-  "t-user": [],
-
-  // Admin groups (t-admin users - single group only)
-  "g-admins-super": [
-    "catalog:read", "catalog:write", "agent:read", "agent:write",
-    "memory:read", "memory:write", "security:read", "security:write",
-    "settings:read", "settings:write", "tagging:read", "tagging:write",
-    "costs:read", "costs:write",
-    "mcp:read", "mcp:write", "a2a:read", "a2a:write",
-    "registry:read", "registry:write",
-    "invoke", "admin:read", "admin:write",
-  ],
-  "g-admins-demo": [
-    "catalog:read", "agent:read", "agent:write", "memory:read", "memory:write",
-    "security:read", "settings:read", "settings:write", "tagging:read", "costs:read", "costs:write",
-    "mcp:read", "mcp:write", "a2a:read", "a2a:write",
-    "registry:read", "registry:write",
-    "invoke",
-  ],
-  "g-admins-security": [
-    "security:read", "security:write", "settings:read", "settings:write", "tagging:read",
-  ],
-  "g-admins-memory": [
-    "memory:read", "memory:write", "settings:read", "settings:write", "tagging:read",
-  ],
-  "g-admins-mcp": [
-    "mcp:read", "mcp:write", "settings:read", "settings:write", "tagging:read",
-  ],
-  "g-admins-a2a": [
-    "a2a:read", "a2a:write", "settings:read", "settings:write", "tagging:read",
-  ],
-  "g-admins-registry": [
-    "mcp:read", "a2a:read", "registry:read", "registry:write", "settings:read", "settings:write", "tagging:read",
-  ],
-
-  // User groups (t-user users - can have multiple)
-  "g-users-demo": ["agent:read", "memory:read", "invoke"],
-  "g-users-test": ["agent:read", "memory:read", "invoke"],
-  "g-users-strategics": ["agent:read", "memory:read", "invoke"],
-};
+// Consolidated navigation (issue #20): MCP Servers and A2A Agents merged into
+// one "Integrations" persona with a tab per resource type; Tagging moved
+// under Settings as a tab; Costs moved under Admin as a tab; Registry folded
+// into Catalog as a collapsible section. `mcp`/`a2a`/`tagging`/`costs`/
+// `registry` are no longer top-level personas — they are internal
+// tab/section-selection state within `integrations`/`settings`/`admin`/
+// `catalog` respectively.
+//
+// Scope-gate reference (which scope governs sidebar/tab visibility vs. the
+// readOnly/edit-ability prop passed to each page):
+//   - Integrations sidebar item: mcp:read || a2a:read (either tab visible)
+//     - MCP tab: visible iff mcp:read; editable iff mcp:write
+//     - A2A tab: visible iff a2a:read; editable iff a2a:write
+//   - Settings > Tagging tab: visible iff tagging:read; editable iff tagging:write
+//     (previously gated by agent:write||security:write||memory:write, which
+//     had nothing to do with tag management — every existing group already
+//     carries tagging:read/write alongside those scopes, so this is a no-op
+//     for current groups and a correctness fix for future ones)
+//   - Admin > Costs tab: visible iff costs:read; editable iff costs:write
+//     (previously gated by catalog:read, which is unrelated to cost data;
+//     g-admins-super and g-admins-demo already have costs:read/write, so
+//     this is also a no-op for current groups)
+//   - Catalog > Registry section: visible iff registry:read; editable iff
+//     registry:write (unchanged from the standalone Registry page's gate)
+type Persona = "catalog" | "security" | "builder" | "memory" | "integrations" | "settings" | "admin";
 
 const USER_GROUPS: Record<string, string[]> = {
   "admin": ["t-admin", "g-admins-super"],
@@ -135,6 +111,25 @@ function SidebarClock() {
 
   return (
     <span className="text-[10px] text-muted-foreground tabular-nums">{time}</span>
+  );
+}
+
+function SidebarSection({
+  label,
+  children,
+}: {
+  label: string;
+  children: React.ReactNode;
+}) {
+  const items = Children.toArray(children).filter(Boolean);
+  if (items.length === 0) return null;
+  return (
+    <div className="space-y-1">
+      <div className="px-3 pt-1 text-[10px] font-semibold text-muted-foreground/70 uppercase tracking-wide">
+        {label}
+      </div>
+      {items}
+    </div>
   );
 }
 
@@ -196,11 +191,9 @@ function AppContent() {
     if (hasScope("security:read") || hasScope("security:write")) return "security";
     if (hasScope("memory:read") || hasScope("memory:write")) return "memory";
     if (hasScope("agent:read") || hasScope("agent:write")) return "builder";
-    if (hasScope("costs:read")) return "costs";
-    if (hasScope("tagging:read")) return "tagging";
-    if (hasScope("mcp:read") || hasScope("mcp:write")) return "mcp";
-    if (hasScope("a2a:read") || hasScope("a2a:write")) return "a2a";
-    if (hasScope("settings:read")) return "settings";
+    if (hasScope("admin:read") || hasScope("costs:read")) return "admin";
+    if (hasScope("tagging:read") || hasScope("settings:read")) return "settings";
+    if (hasScope("mcp:read") || hasScope("mcp:write") || hasScope("a2a:read") || hasScope("a2a:write")) return "integrations";
     return "catalog"; // fallback
   }, [hasScope]);
 
@@ -209,6 +202,7 @@ function AppContent() {
   const [viewAsUser, setViewAsUser] = useState<string | null>(null);
   const [pendingMcpId, setPendingMcpId] = useState<number | null>(null);
   const [pendingA2aId, setPendingA2aId] = useState<number | null>(null);
+  const [integrationsTab, setIntegrationsTab] = useState<"mcp" | "a2a">("mcp");
 
   // Reset all navigation state when user logs in (skip if returning from link callback)
   const hasResetForSession = useRef(false);
@@ -313,8 +307,10 @@ function AppContent() {
     if (isAuthenticated && (activePersona === "catalog" || activePersona === "builder")) {
       void fetchAgents();
     }
-    if (activePersona !== "mcp") setPendingMcpId(null);
-    if (activePersona !== "a2a") setPendingA2aId(null);
+    if (activePersona !== "integrations") {
+      setPendingMcpId(null);
+      setPendingA2aId(null);
+    }
   }, [activePersona, isAuthenticated, fetchAgents]);
 
   const [registryEnabled, setRegistryEnabled] = useState(false);
@@ -518,95 +514,71 @@ function AppContent() {
             className="h-15"
           />
         </div>
-        <nav className="flex-1 p-2 space-y-1">
-          {effectiveHasScope("catalog:read") && (
-            <SidebarItem
-              icon={BookOpen}
-              label={t("nav.catalog")}
-              active={activePersona === "catalog"}
-              onClick={() => setActivePersona("catalog")}
-            />
-          )}
-          {(effectiveHasScope("agent:read") || effectiveHasScope("agent:write")) && (
-            <SidebarItem
-              icon={Bot}
-              label={t("nav.agents")}
-              active={activePersona === "builder"}
-              onClick={() => setActivePersona("builder")}
-            />
-          )}
-          {(effectiveHasScope("memory:read") || effectiveHasScope("memory:write")) && (
-            <SidebarItem
-              icon={Brain}
-              label={t("nav.memory")}
-              active={activePersona === "memory"}
-              onClick={() => setActivePersona("memory")}
-            />
-          )}
-          {(effectiveHasScope("security:read") || effectiveHasScope("security:write")) && (
-            <SidebarItem
-              icon={Shield}
-              label={t("nav.security")}
-              active={activePersona === "security"}
-              onClick={() => setActivePersona("security")}
-            />
-          )}
-          {effectiveHasScope("registry:read") && (
-            <SidebarItem
-              icon={Library}
-              label={t("nav.registry")}
-              active={activePersona === "registry"}
-              onClick={() => setActivePersona("registry")}
-            />
-          )}
-          {(effectiveHasScope("mcp:read") || effectiveHasScope("mcp:write")) && (
-            <SidebarItem
-              icon={Network}
-              label={t("nav.mcpServers")}
-              active={activePersona === "mcp"}
-              onClick={() => setActivePersona("mcp")}
-            />
-          )}
-          {(effectiveHasScope("a2a:read") || effectiveHasScope("a2a:write")) && (
-            <SidebarItem
-              icon={Users}
-              label={t("nav.a2aAgents")}
-              active={activePersona === "a2a"}
-              onClick={() => setActivePersona("a2a")}
-            />
-          )}
-          {(effectiveHasScope("agent:write") || effectiveHasScope("security:write") || effectiveHasScope("memory:write")) && (
-            <SidebarItem
-              icon={Tags}
-              label={t("nav.tagging")}
-              active={activePersona === "tagging"}
-              onClick={() => setActivePersona("tagging")}
-            />
-          )}
-          {effectiveHasScope("catalog:read") && (
-            <SidebarItem
-              icon={DollarSign}
-              label={t("nav.costs")}
-              active={activePersona === "costs"}
-              onClick={() => setActivePersona("costs")}
-            />
-          )}
-          {effectiveHasScope("admin:read") && (
-            <SidebarItem
-              icon={BarChart3}
-              label={t("nav.admin")}
-              active={activePersona === "admin"}
-              onClick={() => setActivePersona("admin")}
-            />
-          )}
-          {effectiveHasScope("settings:read") && (
-            <SidebarItem
-              icon={Settings}
-              label={t("nav.settings")}
-              active={activePersona === "settings"}
-              onClick={() => setActivePersona("settings")}
-            />
-          )}
+        <nav className="flex-1 p-2 space-y-3">
+          <SidebarSection label={t("nav.sections.home")}>
+            {effectiveHasScope("catalog:read") && (
+              <SidebarItem
+                icon={BookOpen}
+                label={t("nav.catalog")}
+                active={activePersona === "catalog"}
+                onClick={() => setActivePersona("catalog")}
+              />
+            )}
+          </SidebarSection>
+          <SidebarSection label={t("nav.sections.build")}>
+            {(effectiveHasScope("agent:read") || effectiveHasScope("agent:write")) && (
+              <SidebarItem
+                icon={Bot}
+                label={t("nav.agents")}
+                active={activePersona === "builder"}
+                onClick={() => setActivePersona("builder")}
+              />
+            )}
+            {(effectiveHasScope("memory:read") || effectiveHasScope("memory:write")) && (
+              <SidebarItem
+                icon={Brain}
+                label={t("nav.memory")}
+                active={activePersona === "memory"}
+                onClick={() => setActivePersona("memory")}
+              />
+            )}
+            {(effectiveHasScope("mcp:read") || effectiveHasScope("mcp:write") || effectiveHasScope("a2a:read") || effectiveHasScope("a2a:write")) && (
+              <SidebarItem
+                icon={Network}
+                label={t("nav.integrations")}
+                active={activePersona === "integrations"}
+                onClick={() => setActivePersona("integrations")}
+              />
+            )}
+          </SidebarSection>
+          <SidebarSection label={t("nav.sections.operate")}>
+            {(effectiveHasScope("security:read") || effectiveHasScope("security:write")) && (
+              <SidebarItem
+                icon={Shield}
+                label={t("nav.security")}
+                active={activePersona === "security"}
+                onClick={() => setActivePersona("security")}
+              />
+            )}
+            {(effectiveHasScope("admin:read") || effectiveHasScope("costs:read") || effectiveHasScope("costs:write")) && (
+              <SidebarItem
+                icon={BarChart3}
+                label={t("nav.analytics")}
+                active={activePersona === "admin"}
+                onClick={() => setActivePersona("admin")}
+              />
+            )}
+          </SidebarSection>
+          <SidebarSection label={t("nav.sections.system")}>
+            {(effectiveHasScope("settings:read") || effectiveHasScope("tagging:read") || effectiveHasScope("tagging:write")) && (
+              <SidebarItem
+                icon={Settings}
+                label={t("nav.settings")}
+                active={activePersona === "settings"}
+                onClick={() => setActivePersona("settings")}
+              />
+            )}
+          </SidebarSection>
         </nav>
         <div className="p-2 border-t space-y-1">
           {user && (
@@ -743,10 +715,13 @@ function AppContent() {
               canViewMemories={effectiveHasScope("memory:read")}
               canViewMcp={effectiveHasScope("mcp:read")}
               canViewA2a={effectiveHasScope("a2a:read")}
+              canViewRegistry={effectiveHasScope("registry:read")}
+              registryReadOnly={!effectiveHasScope("registry:write")}
+              isEndUserRole={effectiveUserGroups.includes("t-user") && !effectiveUserGroups.includes("t-admin")}
               groupRestriction={groupRestriction}
               userGroups={viewAsUser ? (USER_GROUPS[viewAsUser] ?? []) : (user?.groups ?? [])}
-              onNavigateToMcp={(serverId) => { setPendingMcpId(serverId); setActivePersona("mcp"); }}
-              onNavigateToA2a={(agentId) => { setPendingA2aId(agentId); setActivePersona("a2a"); }}
+              onNavigateToMcp={(serverId) => { setPendingMcpId(serverId); setIntegrationsTab("mcp"); setActivePersona("integrations"); }}
+              onNavigateToA2a={(agentId) => { setPendingA2aId(agentId); setIntegrationsTab("a2a"); setActivePersona("integrations"); }}
             />
           )}
 
@@ -821,18 +796,37 @@ function AppContent() {
 
           {activePersona === "security" && <SecurityAdminPage readOnly={!effectiveHasScope("security:write")} />}
           {activePersona === "memory" && <MemoryManagementPage viewMode={memoryViewMode} onViewModeChange={setMemoryViewMode} readOnly={!effectiveHasScope("memory:write")} groupRestriction={groupRestriction} ownerRestriction={ownerRestriction} userGroups={viewAsUser ? (USER_GROUPS[viewAsUser] ?? []) : (user?.groups ?? [])} />}
-          {activePersona === "tagging" && <TaggingPage readOnly={!effectiveHasScope("tagging:write")} userGroups={user?.groups || []} />}
-          {activePersona === "mcp" && <McpServersPage viewMode={mcpViewMode} onViewModeChange={setMcpViewMode} readOnly={!effectiveHasScope("mcp:write")} initialSelectedId={pendingMcpId} key={`mcp-${pendingMcpId}`} />}
-          {activePersona === "a2a" && <A2aAgentsPage viewMode={a2aViewMode} onViewModeChange={setA2aViewMode} readOnly={!effectiveHasScope("a2a:write")} initialSelectedId={pendingA2aId} key={`a2a-${pendingA2aId}`} />}
-          {activePersona === "registry" && <RegistryPage readOnly={!effectiveHasScope("registry:write")} isEndUserRole={effectiveUserGroups.includes("t-user") && !effectiveUserGroups.includes("t-admin")} />}
-          {activePersona === "settings" && <SettingsPage />}
-          {activePersona === "costs" && (
-            <CostDashboardPage
-              readOnly={!effectiveHasScope("catalog:write")}
-              groupRestriction={groupRestriction}
+          {activePersona === "integrations" && (
+            <IntegrationsPage
+              canViewMcp={effectiveHasScope("mcp:read")}
+              canViewA2a={effectiveHasScope("a2a:read")}
+              canEditMcp={effectiveHasScope("mcp:write")}
+              canEditA2a={effectiveHasScope("a2a:write")}
+              activeTab={integrationsTab}
+              onActiveTabChange={setIntegrationsTab}
+              mcpViewMode={mcpViewMode}
+              onMcpViewModeChange={setMcpViewMode}
+              a2aViewMode={a2aViewMode}
+              onA2aViewModeChange={setA2aViewMode}
+              pendingMcpId={pendingMcpId}
+              pendingA2aId={pendingA2aId}
             />
           )}
-          {activePersona === "admin" && <AdminDashboardPage />}
+          {activePersona === "settings" && (
+            <SettingsPage
+              canViewTagging={effectiveHasScope("tagging:read")}
+              canEditTagging={effectiveHasScope("tagging:write")}
+              userGroups={user?.groups || []}
+            />
+          )}
+          {activePersona === "admin" && (
+            <AdminDashboardPage
+              canViewSessions={effectiveHasScope("admin:read")}
+              canViewCosts={effectiveHasScope("costs:read")}
+              canEditCosts={effectiveHasScope("costs:write")}
+              costsGroupRestriction={groupRestriction}
+            />
+          )}
         </main>
       </div>
 

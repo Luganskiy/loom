@@ -78,8 +78,8 @@ Loom seamlessly weaves together agents, memory stores, MCP servers, and agent-to
 - Cost badges on agent cards, token/cost columns in invocation tables
 - Model pricing metadata for all supported Anthropic and Amazon models
 
-### Admin Dashboard
-- Platform usage analytics for super-admins: login tracking, user action tracking, and page navigation tracking
+### Analytics
+- Platform usage analytics for super-admins ("User Activity" tab, alongside a "Costs" tab): login tracking, user action tracking, and page navigation tracking
 - All audit events are scoped to a browser session UUID (generated at login, stored in React state) to distinguish shared accounts
 - Global multi-select user filter that limits all summary cards, charts, and tab tables to selected users; stats are recomputed client-side from filtered data when active
 - Summary cards (total logins, total page views, total actions, total duration, most active page) with time-range selector
@@ -121,7 +121,7 @@ See [`backend/SPECIFICATIONS.md`](backend/SPECIFICATIONS.md) and [`frontend/SPEC
 - **Containers:** Dockerfiles for both frontend (multi-stage Node + nginx) and backend (Python 3.13 slim + uvicorn + agent source from repo root), deployable to ECS Fargate behind an ALB with ACM certificate
 - **Frontend:** React 18, TypeScript, Vite, shadcn/ui, Tailwind CSS v4
 - **Auth:** Cognito User Pool with group-based scopes; frontend enforces sidebar visibility and write permissions
-- **Navigation:** Platform Catalog, Agents, Memory, Security Admin, MCP Servers, A2A Agents, Tags, Costs, Settings, Admin Dashboard (super-admins only)
+- **Navigation:** Platform Catalog, Agents, Memory, Integrations (MCP Servers/A2A Agents tabs), Security Admin, Settings (with a Tagging tab), Analytics (User Activity/Costs tabs, super-admins only) — grouped under Home/Build/Operate/System sidebar sections
 
 ## Deployment
 
