@@ -8,17 +8,20 @@
     "dark": "ダーク"
   },
   "nav": {
+    "sections": {
+      "home": "ホーム",
+      "build": "ビルド",
+      "operate": "運用",
+      "system": "システム"
+    },
     "catalog": "カタログ",
     "agents": "エージェント",
     "memory": "メモリ",
     "security": "セキュリティ",
-    "registry": "レジストリ",
     "integrations": "インテグレーション",
     "mcpServers": "MCPサーバー",
     "a2aAgents": "A2Aエージェント",
-    "tagging": "タグ管理",
-    "costs": "コスト",
-    "admin": "管理",
+    "analytics": "アナリティクス",
     "settings": "設定"
   },
   "settings": {

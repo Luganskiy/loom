@@ -126,7 +126,16 @@ The app uses a persona-based single-page architecture with a sidebar for workflo
 
 ### Persona Navigation (Sidebar)
 
-Consolidated (issue #20) from an earlier 11-item sidebar down to 7 top-level personas. MCP Servers, A2A Agents, Tagging, Costs, and Registry are no longer standalone sidebar items — they now live as tabs/sections within a related parent persona, reusing that parent's existing tab scaffolding (Settings/Admin already had `Tabs`; Catalog/Integrations gained a collapsible-section/tab pattern respectively). This works within the existing `activePersona`-driven rendering model — no router library was introduced.
+Consolidated (issue #20) from an earlier 11-item sidebar down to 7 top-level personas. MCP Servers, A2A Agents, Tagging, Costs, and Registry are no longer standalone sidebar items — they now live as tabs/sections within a related parent persona, reusing that parent's existing tab scaffolding (Settings/Analytics already had `Tabs`; Catalog/Integrations gained a collapsible-section/tab pattern respectively). This works within the existing `activePersona`-driven rendering model — no router library was introduced.
+
+The 7 personas are grouped under four section headers (`SidebarSection` in `App.tsx`) for scannability — purely a visual grouping layer on top of `activePersona`, with no effect on gating: a section header renders only when at least one of its child items is scope-visible, so an empty section never shows a lone header.
+
+| Section | Personas |
+|---------|----------|
+| Home | Platform Catalog |
+| Build | Agents, Memory, Integrations |
+| Operate | Security Admin, Analytics |
+| System | Settings |
 
 | Persona | Icon | Description | Sidebar visibility gate | Default |
 |---------|------|-------------|--------------------------|---------|
@@ -136,7 +145,7 @@ Consolidated (issue #20) from an earlier 11-item sidebar down to 7 top-level per
 | Security Admin | Shield | Manage roles, authorizers, credentials, permissions | `security:read` or `security:write` | |
 | Integrations | Network | MCP Servers and A2A Agents tabs (formerly two standalone personas) | `mcp:read`/`mcp:write` or `a2a:read`/`a2a:write` (either grants entry; each tab is independently gated — see below) | |
 | Settings | Settings | Display preferences, models, networking, infrastructure, and (per R2) a Tagging tab | `settings:read`, `tagging:read`, or `tagging:write` (any grants entry; the Tagging tab itself requires `tagging:read`) | |
-| Admin Dashboard | BarChart3 | Platform usage analytics (Sessions/Actions/Page Views tabs) and (per R3) a Costs section | `admin:read`, `costs:read`, or `costs:write` (any grants entry; analytics tabs require `admin:read`, the Costs section requires `costs:read`) | |
+| Analytics | BarChart3 | Platform usage analytics ("User Activity" tab: Sessions/Actions/Page Views) and (per R3) a "Costs" tab — renamed from "Admin"/"Admin Dashboard" once the persona grew to cover both | `admin:read`, `costs:read`, or `costs:write` (any grants entry; User Activity requires `admin:read`, Costs requires `costs:read`) | |
 
 Sidebar items are conditionally rendered based on the user's scopes derived from their Cognito group membership (`effectiveHasScope`). When auth is not configured, all items are visible.
 
@@ -144,7 +153,7 @@ Sidebar items are conditionally rendered based on the user's scopes derived from
 
 - **Integrations** sidebar item: `mcp:read || a2a:read`. MCP tab visible iff `mcp:read`, editable iff `mcp:write`. A2A tab visible iff `a2a:read`, editable iff `a2a:write`. If the caller has only one of the two read scopes, `IntegrationsPage` renders that page directly without the `Tabs` shell rather than showing an empty tab list.
 - **Settings > Tagging tab**: visible iff `tagging:read`, editable iff `tagging:write`. Previously gated by `agent:write || security:write || memory:write`, which had nothing to do with tag management — every currently-defined `GROUP_SCOPES` entry already carries `tagging:read`/`tagging:write` alongside those write scopes, so this was a no-op change for all existing groups and a correctness fix for future ones.
-- **Admin > Costs section**: visible iff `costs:read`, editable iff `costs:write`. Previously gated by `catalog:read`, unrelated to cost data. `g-admins-super` and `g-admins-demo` already have `costs:read`/`costs:write` in `GROUP_SCOPES` (the latter without `admin:read`), so Admin's own sidebar/page gate was widened to `admin:read || costs:read || costs:write` — otherwise a costs-only group would lose Costs access entirely once it moved under a page gated solely by `admin:read`. The existing Sessions/Actions/Page Views tabs remain specifically gated by `admin:read` (rendered only when `canViewSessions` is true) so a costs-only caller sees just the Costs section, not an empty analytics shell.
+- **Analytics > Costs tab**: visible iff `costs:read`, editable iff `costs:write`. Previously gated by `catalog:read`, unrelated to cost data. `g-admins-super` and `g-admins-demo` already have `costs:read`/`costs:write` in `GROUP_SCOPES` (the latter without `admin:read`), so Analytics' own sidebar/page gate was widened to `admin:read || costs:read || costs:write` — otherwise a costs-only group would lose Costs access entirely once it moved under a page gated solely by `admin:read`. The "User Activity" tab (Sessions/Actions/Page Views) remains specifically gated by `admin:read` (rendered only when `canViewSessions` is true). When both scopes are present, both render as tabs inside `AdminDashboardPage`; when only one is present, that content renders directly with no `Tabs` shell, so a costs-only caller sees just the Costs content, not an empty tab strip.
 - **Catalog > Registry section**: visible iff `registry:read`, editable iff `registry:write` — unchanged from the standalone Registry page's gate. Clicking a record drills into the full `RegistryPage` component (list + `LifecycleTimeline`/`DescriptorView` detail) rendered inline within Catalog via an `initialSelectedRecordId` prop, rather than duplicating that logic in `CatalogPage`.
 
 `GROUP_SCOPES` was previously duplicated between `AuthContext.tsx` and `App.tsx` (manually kept in sync, and had already drifted — the `App.tsx` copy was missing `mcp:read` for the `g-users-*` groups). `App.tsx` now imports the canonical `GROUP_SCOPES` from `AuthContext.tsx` (exported for this purpose) rather than maintaining its own copy.
@@ -761,7 +770,7 @@ The invoke panel's credential dropdown includes a "Manual token" sentinel value.
 | View | Persona | Description |
 |------|---------|-------------|
 | A2aAgentsPage | Integrations (A2A tab) | A2A agent CRUD, agent detail with Agent Card and Access tabs, card/table views. Rendered as a tab within `IntegrationsPage`, alongside McpServersPage — see [3. Application Shell](#3-application-shell) for the consolidation. |
-| CostDashboardPage | Admin Dashboard (Costs section) | Cost dashboard with time-range selector (7d/30d/90d/All), summary cards (Total Cost, Model Tokens, Runtime, Memory), Estimated Costs table with per-agent breakdown and methodology formulas, Actual Costs with separate Runtime and Memory sub-sections, collapsible agent groups for Runtime, consolidated per-resource rows for Memory, sortable columns. Rendered within `AdminDashboardPage`, gated independently by `costs:read`/`costs:write`. |
+| CostDashboardPage | Analytics (Costs tab) | Cost dashboard with time-range selector (7d/30d/90d/All), summary cards (Total Cost, Model Tokens, Runtime, Memory), Estimated Costs table with per-agent breakdown and methodology formulas, Actual Costs with separate Runtime and Memory sub-sections, collapsible agent groups for Runtime, consolidated per-resource rows for Memory, sortable columns. Rendered within `AdminDashboardPage`, gated independently by `costs:read`/`costs:write`. |
 
 ### Token Usage and Cost Display
 
@@ -784,15 +793,15 @@ The invoke panel's credential dropdown includes a "Manual token" sentinel value.
 
 ---
 
-## 12. Admin Dashboard
+## 12. Analytics
 
-**Purpose:** Platform usage analytics (login/action/page-view tracking, Sessions/Actions/Page Views tabs) and, since issue #20, a Costs section ([see below](#costs-admin-dashboard-section)).
+**Purpose:** Platform usage analytics (login/action/page-view tracking, Sessions/Actions/Page Views tabs, labeled "User Activity") and, since issue #20, cost data ([see below](#costs-analytics-tab)) — rendered as two top-level tabs, "User Activity" and "Costs", within `AdminDashboardPage.tsx`. Sidebar label is "Analytics" (renamed from "Admin"/"Admin Dashboard" once the persona grew to cover both usage audit and cost data).
 
-**Sidebar visibility gate:** `admin:read || costs:read || costs:write` — any of the three grants entry to the Admin persona. Within the page, the analytics tabs render only when `canViewSessions` (`admin:read`) is true, and the Costs section renders only when `canViewCosts` (`costs:read`) is true, so a caller with only `costs:read` sees the Costs section without an empty analytics shell, and vice versa. See [3. Application Shell](#3-application-shell) for the full scope-gate rationale.
+**Sidebar visibility gate:** `admin:read || costs:read || costs:write` — any of the three grants entry to the Analytics persona. Within the page, the "User Activity" tab renders only when `canViewSessions` (`admin:read`) is true, and the "Costs" tab renders only when `canViewCosts` (`costs:read`) is true. When both are true, both tabs render inside a shadcn `Tabs` (default tab: User Activity); when only one is true, that content renders directly with no tab strip — so a caller with only `costs:read` sees just the Costs content, not an empty analytics shell, and vice versa. See [3. Application Shell](#3-application-shell) for the full scope-gate rationale.
 
-### Costs (Admin Dashboard Section)
+### Costs (Analytics Tab)
 
-Formerly a standalone top-level "Costs" sidebar persona (`CostDashboardPage.tsx`), gated by `catalog:read` — unrelated to cost data. Consolidated (issue #20) into a section within `AdminDashboardPage`, now gated by `costs:read` (visibility) / `costs:write` (edit, via `readOnly={!canEditCosts}`). The component itself is unchanged; see [11. Design Decisions](#11-design-decisions) and the `CostDashboardPage` entry in the Views table above for its content.
+Formerly a standalone top-level "Costs" sidebar persona (`CostDashboardPage.tsx`), gated by `catalog:read` — unrelated to cost data. Consolidated (issue #20) first into a stacked section within `AdminDashboardPage`, then promoted to its own top-level tab ("Costs", alongside "User Activity") within the same page. Gated by `costs:read` (visibility) / `costs:write` (edit, via `readOnly={!canEditCosts}`). The component itself is unchanged; see [11. Design Decisions](#11-design-decisions) and the `CostDashboardPage` entry in the Views table above for its content.
 
 **Auth context additions:**
 - `browserSessionId: string | null` — UUID generated at login via `crypto.randomUUID()`, stored in React state (not localStorage). Resets on page refresh or re-login to distinguish usage sessions.

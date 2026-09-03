@@ -8,17 +8,20 @@
     "dark": "Dark"
   },
   "nav": {
+    "sections": {
+      "home": "Home",
+      "build": "Build",
+      "operate": "Operate",
+      "system": "System"
+    },
     "catalog": "Catalog",
     "agents": "Agents",
     "memory": "Memory",
     "security": "Security",
-    "registry": "Registry",
     "integrations": "Integrations",
     "mcpServers": "MCP Servers",
     "a2aAgents": "A2A Agents",
-    "tagging": "Tagging",
-    "costs": "Costs",
-    "admin": "Admin",
+    "analytics": "Analytics",
     "settings": "Settings"
   },
   "settings": {

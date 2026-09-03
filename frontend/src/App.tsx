@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, Children } from "react";
 import { useTranslation } from "react-i18next";
 import { Toaster } from "@/components/ui/sonner";
 import { toast } from "sonner";
@@ -111,6 +111,25 @@ function SidebarClock() {
 
   return (
     <span className="text-[10px] text-muted-foreground tabular-nums">{time}</span>
+  );
+}
+
+function SidebarSection({
+  label,
+  children,
+}: {
+  label: string;
+  children: React.ReactNode;
+}) {
+  const items = Children.toArray(children).filter(Boolean);
+  if (items.length === 0) return null;
+  return (
+    <div className="space-y-1">
+      <div className="px-3 pt-1 text-[10px] font-semibold text-muted-foreground/70 uppercase tracking-wide">
+        {label}
+      </div>
+      {items}
+    </div>
   );
 }
 
@@ -495,63 +514,71 @@ function AppContent() {
             className="h-15"
           />
         </div>
-        <nav className="flex-1 p-2 space-y-1">
-          {effectiveHasScope("catalog:read") && (
-            <SidebarItem
-              icon={BookOpen}
-              label={t("nav.catalog")}
-              active={activePersona === "catalog"}
-              onClick={() => setActivePersona("catalog")}
-            />
-          )}
-          {(effectiveHasScope("agent:read") || effectiveHasScope("agent:write")) && (
-            <SidebarItem
-              icon={Bot}
-              label={t("nav.agents")}
-              active={activePersona === "builder"}
-              onClick={() => setActivePersona("builder")}
-            />
-          )}
-          {(effectiveHasScope("memory:read") || effectiveHasScope("memory:write")) && (
-            <SidebarItem
-              icon={Brain}
-              label={t("nav.memory")}
-              active={activePersona === "memory"}
-              onClick={() => setActivePersona("memory")}
-            />
-          )}
-          {(effectiveHasScope("security:read") || effectiveHasScope("security:write")) && (
-            <SidebarItem
-              icon={Shield}
-              label={t("nav.security")}
-              active={activePersona === "security"}
-              onClick={() => setActivePersona("security")}
-            />
-          )}
-          {(effectiveHasScope("mcp:read") || effectiveHasScope("mcp:write") || effectiveHasScope("a2a:read") || effectiveHasScope("a2a:write")) && (
-            <SidebarItem
-              icon={Network}
-              label={t("nav.integrations")}
-              active={activePersona === "integrations"}
-              onClick={() => setActivePersona("integrations")}
-            />
-          )}
-          {(effectiveHasScope("admin:read") || effectiveHasScope("costs:read") || effectiveHasScope("costs:write")) && (
-            <SidebarItem
-              icon={BarChart3}
-              label={t("nav.admin")}
-              active={activePersona === "admin"}
-              onClick={() => setActivePersona("admin")}
-            />
-          )}
-          {(effectiveHasScope("settings:read") || effectiveHasScope("tagging:read") || effectiveHasScope("tagging:write")) && (
-            <SidebarItem
-              icon={Settings}
-              label={t("nav.settings")}
-              active={activePersona === "settings"}
-              onClick={() => setActivePersona("settings")}
-            />
-          )}
+        <nav className="flex-1 p-2 space-y-3">
+          <SidebarSection label={t("nav.sections.home")}>
+            {effectiveHasScope("catalog:read") && (
+              <SidebarItem
+                icon={BookOpen}
+                label={t("nav.catalog")}
+                active={activePersona === "catalog"}
+                onClick={() => setActivePersona("catalog")}
+              />
+            )}
+          </SidebarSection>
+          <SidebarSection label={t("nav.sections.build")}>
+            {(effectiveHasScope("agent:read") || effectiveHasScope("agent:write")) && (
+              <SidebarItem
+                icon={Bot}
+                label={t("nav.agents")}
+                active={activePersona === "builder"}
+                onClick={() => setActivePersona("builder")}
+              />
+            )}
+            {(effectiveHasScope("memory:read") || effectiveHasScope("memory:write")) && (
+              <SidebarItem
+                icon={Brain}
+                label={t("nav.memory")}
+                active={activePersona === "memory"}
+                onClick={() => setActivePersona("memory")}
+              />
+            )}
+            {(effectiveHasScope("mcp:read") || effectiveHasScope("mcp:write") || effectiveHasScope("a2a:read") || effectiveHasScope("a2a:write")) && (
+              <SidebarItem
+                icon={Network}
+                label={t("nav.integrations")}
+                active={activePersona === "integrations"}
+                onClick={() => setActivePersona("integrations")}
+              />
+            )}
+          </SidebarSection>
+          <SidebarSection label={t("nav.sections.operate")}>
+            {(effectiveHasScope("security:read") || effectiveHasScope("security:write")) && (
+              <SidebarItem
+                icon={Shield}
+                label={t("nav.security")}
+                active={activePersona === "security"}
+                onClick={() => setActivePersona("security")}
+              />
+            )}
+            {(effectiveHasScope("admin:read") || effectiveHasScope("costs:read") || effectiveHasScope("costs:write")) && (
+              <SidebarItem
+                icon={BarChart3}
+                label={t("nav.analytics")}
+                active={activePersona === "admin"}
+                onClick={() => setActivePersona("admin")}
+              />
+            )}
+          </SidebarSection>
+          <SidebarSection label={t("nav.sections.system")}>
+            {(effectiveHasScope("settings:read") || effectiveHasScope("tagging:read") || effectiveHasScope("tagging:write")) && (
+              <SidebarItem
+                icon={Settings}
+                label={t("nav.settings")}
+                active={activePersona === "settings"}
+                onClick={() => setActivePersona("settings")}
+              />
+            )}
+          </SidebarSection>
         </nav>
         <div className="p-2 border-t space-y-1">
           {user && (

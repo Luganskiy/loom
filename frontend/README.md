@@ -52,17 +52,17 @@ Theme and timezone preferences are configured on the Settings page. Colors are m
 
 ### Persona-Based Navigation
 
-The sidebar provides access to persona-based workflows. Consolidated from an earlier 11-item list down to 7 (see `frontend/SPECIFICATIONS.md` § 3 for the full scope-gate rationale) — MCP Servers, A2A Agents, Registry, Tags, and Costs are no longer standalone sidebar items; they now live as tabs/sections within a related persona:
+The sidebar provides access to persona-based workflows. Consolidated from an earlier 11-item list down to 7 (see `frontend/SPECIFICATIONS.md` § 3 for the full scope-gate rationale) — MCP Servers, A2A Agents, Registry, Tags, and Costs are no longer standalone sidebar items; they now live as tabs/sections within a related persona. The 7 personas are grouped under four section headers for scannability (Home, Build, Operate, System); a section header only renders when at least one of its personas is scope-visible:
 
-| Persona | Icon | Description |
-|---------|------|-------------|
-| **Platform Catalog** | BookOpen | Browse agents, memory resources, MCP servers, A2A agents, and registry records (default) |
-| **Agents** | Bot | Deploy new agents or import existing ones |
-| **Memory** | Brain | Create and manage AgentCore Memory resources |
-| **Security Admin** | Shield | Manage IAM roles, authorizer configs, credentials, permission requests |
-| **Integrations** | Network | MCP Servers and A2A Agents tabs — register/manage MCP servers (OAuth2 auth, tool discovery, access control) and A2A agents (OAuth2 auth, Agent Card display, access control) |
-| **Settings** | Settings | Display preferences (theme, timezone), cost estimation settings (CPU I/O wait discount), Agent Registry configuration (ARN-based, opt-in governance), enabled models (per-provider), an optional LiteLLM proxy connection for alternate model providers, and a Tagging tab (tag policies and tag profiles with collapsible groups and JSON import) |
-| **Admin Dashboard** | BarChart3 | Platform usage analytics (login/action/page-navigation tracking, per-session drill-down) and a Costs section (estimated costs, actual runtime costs from CloudWatch, cost settings) |
+| Persona | Icon | Section | Description |
+|---------|------|---------|-------------|
+| **Platform Catalog** | BookOpen | Home | Browse agents, memory resources, MCP servers, A2A agents, and registry records (default) |
+| **Agents** | Bot | Build | Deploy new agents or import existing ones |
+| **Memory** | Brain | Build | Create and manage AgentCore Memory resources |
+| **Integrations** | Network | Build | MCP Servers and A2A Agents tabs — register/manage MCP servers (OAuth2 auth, tool discovery, access control) and A2A agents (OAuth2 auth, Agent Card display, access control) |
+| **Security Admin** | Shield | Operate | Manage IAM roles, authorizer configs, credentials, permission requests |
+| **Analytics** | BarChart3 | Operate | "User Activity" tab (login/action/page-navigation tracking, per-session drill-down) and a "Costs" tab (estimated costs, actual runtime costs from CloudWatch, cost settings) — renamed from "Admin"/"Admin Dashboard" once the persona grew to cover both |
+| **Settings** | Settings | System | Display preferences (theme, timezone), cost estimation settings (CPU I/O wait discount), Agent Registry configuration (ARN-based, opt-in governance), enabled models (per-provider), an optional LiteLLM proxy connection for alternate model providers, and a Tagging tab (tag policies and tag profiles with collapsible groups and JSON import) |
 
 **End-user chat layout:** Users in the `t-user` Cognito group (without `t-admin`) see a dedicated `ChatPage` instead of the admin sidebar. The chat layout provides a focused chat interface with agent selection, conversation history with immediate tab creation on `session_start`, streaming responses scoped to the active conversation, queued prompt support (single-slot, last-write-wins, auto-sends on stream completion), markdown rendering for all bubbles (user, assistant, queued) with collapsible JSON blocks, and a memory panel — with no admin navigation items exposed.
 
@@ -223,9 +223,9 @@ The `AuthContext` also provides scope-based authorization using a two-dimensiona
 | McpServersPage | Integrations (MCP tab) | MCP server CRUD, server detail with Tools and Access tabs, card/table views |
 | A2aAgentsPage | Integrations (A2A tab) | A2A agent CRUD, Agent Card detail, Access control tabs |
 | RegistryPage | Platform Catalog (Registry section) | Registry record browse, status/type filters, semantic search, record detail with JSON descriptors — rendered as a collapsible Catalog section, with record clicks drilling into the full page component |
-| CostDashboardPage | Admin Dashboard (Costs section) | Estimated costs table (per-agent breakdown with methodology formulas), actual costs with Runtime (collapsible agent groups, per-session detail) and Memory (consolidated per-resource) sub-sections, summary cards, time-range selector, sortable columns |
+| CostDashboardPage | Analytics (Costs tab) | Estimated costs table (per-agent breakdown with methodology formulas), actual costs with Runtime (collapsible agent groups, per-session detail) and Memory (consolidated per-resource) sub-sections, summary cards, time-range selector, sortable columns |
 | SettingsPage | Settings | Display preferences (theme, timezone), cost estimation settings (CPU I/O wait discount), Agent Registry configuration (ARN input, enable/disable), and a Tagging tab (gated by `tagging:read`) |
-| AdminDashboardPage | Admin | Global multi-select user filter; summary cards (total logins, page views, actions, duration, most active page); recharts bar charts (logins over time, actions over time, page views by page); tabbed tables: Sessions (with timeline drill-down), Actions (category/type filters), Page Views (page filter); all data filtered by selected users when filter is active; gated by `admin:read` (rendered independently of the Costs section, which is gated by `costs:read`) |
+| AdminDashboardPage | Analytics (User Activity tab) | Global multi-select user filter; summary cards (total logins, page views, actions, duration, most active page); recharts bar charts (logins over time, actions over time, page views by page); tabbed tables: Sessions (with timeline drill-down), Actions (category/type filters), Page Views (page filter); all data filtered by selected users when filter is active; gated by `admin:read`. Renders as a "User Activity" tab alongside "Costs" when both `admin:read` and `costs:read` are present, otherwise renders directly with no tab strip |
 | ChatPage | End-user | Chat interface for `t-user` group: agent picker (multi-agent) or auto-selected (single agent), conversation history sidebar with immediate tab creation on `session_start` and auto-selection, streaming bubbles scoped to the active conversation (`isCurrentlyStreaming`), queued prompt support (enqueue one message during streaming, auto-sends on completion with correct ordering), markdown rendering for all bubbles (user, assistant, queued) with collapsible JSON blocks, session management, conversation removal with audit tracking, memory panel with refresh button, strategy-based labels, and error state display (toast notifications on API failure, inline error message in panel) |
 
 ### Session Liveness
