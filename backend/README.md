@@ -301,7 +301,7 @@ Stores configurable site-wide settings. Currently includes `cpu_io_wait_discount
 
 ### `audit_login`, `audit_action`, `audit_page_view`
 
-Write-only audit tables populated by the frontend. `audit_login` records user login events with a `browser_session_id` (client-generated UUID) to distinguish concurrent sessions for shared accounts. `audit_action` records explicit user interactions (deploys, creates, deletes, etc.) with category, type, and optional resource name. `audit_page_view` records persona navigation with entry time and duration. Only the Admin Dashboard reads from these tables.
+Write-only audit tables populated by the frontend. `audit_login` records user login events with a `browser_session_id` (client-generated UUID) to distinguish concurrent sessions for shared accounts. `audit_action` records explicit user interactions (deploys, creates, deletes, etc.) with category, type, and optional resource name. `audit_page_view` records persona navigation with entry time and duration. Only the frontend's Analytics persona (User Activity tab) reads from these tables.
 
 ## API Endpoints
 
