@@ -17,7 +17,7 @@ The deployment model has three phases:
 **AWS infrastructure** (required for Phase 2 and Phase 3):
 
 **VPC and networking:**
-- VPC with at least 1 public subnet for the ALB and at least 2 private subnets in different AZs (required for RDS Multi-AZ and for the EC2 bastion, which runs in a private subnet and uses SSM Session Manager)
+- VPC with at least 2 private subnets in different AZs (required for RDS Multi-AZ and for the EC2 bastion, which runs in a private subnet and uses SSM Session Manager). The ALB is **internal by default** (`P_INFRA_ALB_SCHEME=internal`) and is placed in the subnets given by `PUBLIC_SUBNET_IDS`; point that at private subnets for an internal ALB, or at public subnets and set `P_INFRA_ALB_SCHEME=internet-facing` for a public one
 - Internet gateway for public subnets
 - NAT gateway in a public subnet for private subnet outbound traffic (required for ECR image pulls)
 
@@ -75,6 +75,8 @@ Environment configuration is centralized in `shared/etc/common.sh`. Update the f
 | `VPC_ID` | VPC ID for deployment |
 | `PRIVATE_SUBNET_IDS` | Comma-separated list of private subnet IDs (at least 2 in different AZs) |
 | `PUBLIC_SUBNET_IDS` | Comma-separated list of public subnet IDs (at least 1) |
+| `P_INFRA_ALB_SCHEME` | ALB scheme: `internal` (default; reachable only inside the VPC or via VPN/peering/Direct Connect) or `internet-facing` |
+| `P_INFRA_ALB_INGRESS_CIDR` | CIDR block allowed to reach the ALB on HTTPS (443), e.g., `10.0.0.0/16` |
 | `PUBLIC_FQDN` | Public endpoint FQDN (e.g., `loom.example.com`) |
 | `RDS_ALLOWED_CIDR` | CIDR block allowed to connect to RDS instance on port 5432, e.g., `10.0.0.0/16` |
 | `COGNITO_POOL_NAME` | Desired Cognito User Pool name |

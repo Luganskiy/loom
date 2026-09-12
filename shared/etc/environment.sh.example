@@ -58,7 +58,12 @@ P_INFRA_OUTPUT=iac/infra_output.yaml
 
 # Infrastructure parameters
 P_INFRA_VPC_ID=$(VPC_ID)
+# Subnets for the ALB: private subnets when P_INFRA_ALB_SCHEME=internal, public subnets when internet-facing
 P_INFRA_PUBLIC_SUBNET_IDS=$(PUBLIC_SUBNET_IDS)
+# ALB scheme: internal (reachable only inside the VPC / via VPN, peering, Direct Connect) or internet-facing
+P_INFRA_ALB_SCHEME=internal
+# CIDR allowed to reach the ALB on HTTPS (443); for an internal ALB this is typically the VPC or corporate CIDR
+P_INFRA_ALB_INGRESS_CIDR=$(ALB_INGRESS_CIDR)
 P_INFRA_DOMAIN_NAME=$(PUBLIC_FQDN)
 
 # ECR repository names

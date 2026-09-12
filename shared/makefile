@@ -1,4 +1,6 @@
 include etc/environment.sh
+# ALB scheme defaults to internal when the (older) environment.sh does not set it
+P_INFRA_ALB_SCHEME ?= internal
 
 # role
 role: role.package role.deploy
@@ -236,6 +238,7 @@ infra.deploy:
 			pFrontendRepoName=$(P_ECR_FRONTEND_REPO) \
 			pBackendRepoName=$(P_ECR_BACKEND_REPO) \
 			pAlbIngressCidr=$(P_INFRA_ALB_INGRESS_CIDR) \
+			pAlbScheme=$(P_INFRA_ALB_SCHEME) \
 			pTagApplication=$(P_TAG_APPLICATION) \
 			pTagGroup=$(P_TAG_GROUP) \
 			pTagOwner=$(P_TAG_OWNER) \

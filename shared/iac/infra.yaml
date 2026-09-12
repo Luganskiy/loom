@@ -13,7 +13,14 @@ Parameters:
     Description: VPC ID for ALB and ECS security groups
   pPublicSubnetIds:
     Type: List<AWS::EC2::Subnet::Id>
-    Description: Public subnet IDs for ALB placement
+    Description: Subnet IDs for ALB placement (public subnets for internet-facing, private subnets for internal)
+  pAlbScheme:
+    Type: String
+    Description: ALB scheme. internal keeps the management UI reachable only from inside the VPC (or via VPN/peering/Direct Connect); internet-facing exposes it publicly, restricted by pAlbIngressCidr
+    Default: internal
+    AllowedValues:
+      - internal
+      - internet-facing
   pDomainName:
     Type: String
     Description: Subdomain name for the application (e.g. loom.example.com)
@@ -234,7 +241,7 @@ Resources:
       checkov:
         skip:
           - id: CKV_AWS_260
-            comment: ALB requires open ingress for public HTTPS access
+            comment: ALB ingress CIDR is operator-supplied via pAlbIngressCidr (internal ALB by default)
     Properties:
       GroupDescription: Allow inbound HTTPS traffic to the ALB
       VpcId: !Ref pVpcId
@@ -282,7 +289,7 @@ Resources:
     Type: AWS::ElasticLoadBalancingV2::LoadBalancer
     Properties:
       Name: !Sub "${AWS::StackName}-alb"
-      Scheme: internet-facing
+      Scheme: !Ref pAlbScheme
       Type: application
       Subnets: !Ref pPublicSubnetIds
       SecurityGroups:
