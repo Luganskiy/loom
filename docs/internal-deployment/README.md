@@ -6,6 +6,7 @@ Documentation for running the Loom management plane privately (internal ALB, exi
 |---|---|
 | [DESIGN.md](DESIGN.md) | Design doc: goals, architecture, network, auth flow, data, agents in VPC mode, deployment, cost, operations, security, decisions, risks |
 | [PLAN.md](PLAN.md) | Implementation plan in eight phases with tasks, exit criteria, effort and cost |
+| [index.html](index.html) | Both documents on one styled page with the diagrams inline; open locally in a browser |
 | [diagrams/](diagrams/) | AWS-style architecture diagrams (SVG + PNG) and the generator that produces them from the official AWS Architecture Icons |
 
 ## Diagrams at a glance

@@ -1,0 +1,948 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Loom Internal Deployment</title>
+<meta name="description" content="Design doc and implementation plan for running Loom for AWS privately behind an internal ALB at small-team cost.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Serif:ital,wght@0,400;0,600;1,400&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+:root {
+  --ground:#F4F6F8; --surface:#FFFFFF; --ink:#1A222C; --muted:#5B6672; --accent:#0B7A78; --accent-ink:#075E5C;
+  --rule:#D9E0E6; --tint:#E7F3F2; --code:#EEF2F5; --warn:#8A5A00;
+  --sans:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif;
+  --serif:"IBM Plex Serif",Georgia,"Times New Roman",serif;
+  --mono:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --ground:#0F1418; --surface:#161C22; --ink:#E6EBEF; --muted:#9AA6B2; --accent:#4FC1BC; --accent-ink:#7FD8D3;
+  --rule:#2A343E; --tint:#12302F; --code:#1D252D; --warn:#E0B25A; } }
+:root[data-theme="dark"] {
+  --ground:#0F1418; --surface:#161C22; --ink:#E6EBEF; --muted:#9AA6B2; --accent:#4FC1BC; --accent-ink:#7FD8D3;
+  --rule:#2A343E; --tint:#12302F; --code:#1D252D; --warn:#E0B25A; }
+* { box-sizing:border-box; }
+body { margin:0; background:var(--ground); color:var(--ink); font-family:var(--serif); font-size:16px; line-height:1.55;
+  padding-block:0 64px; padding-inline:16px; }
+a { color:var(--accent-ink); text-decoration-thickness:1px; text-underline-offset:2px; }
+a:focus-visible, button:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+.masthead { max-width:1240px; margin:0 auto; padding-block:40px 24px; border-bottom:1px solid var(--rule); }
+.masthead .eyebrow { font-family:var(--sans); font-size:12px; letter-spacing:.08em; text-transform:uppercase; color:var(--muted); margin:0 0 10px; }
+.masthead h1 { font-family:var(--sans); font-weight:600; font-size:clamp(28px,4vw,40px); line-height:1.1; margin:0 0 12px; text-wrap:balance; letter-spacing:-.01em; }
+.masthead p.lede { max-width:68ch; margin:0; font-size:18px; color:var(--muted); }
+.masthead .facts { display:flex; flex-wrap:wrap; gap:8px 24px; margin-top:18px; font-family:var(--sans); font-size:13px; color:var(--muted); }
+.masthead .facts b { color:var(--ink); font-weight:500; }
+.shell { max-width:1240px; margin:0 auto; display:grid; grid-template-columns:240px minmax(0,1fr); gap:48px; padding-top:32px; }
+nav.toc { position:sticky; top:16px; align-self:start; font-family:var(--sans); font-size:13px; max-height:calc(100vh - 32px); overflow:auto; }
+nav.toc h2 { font-size:11px; letter-spacing:.08em; text-transform:uppercase; color:var(--muted); margin:18px 0 8px; font-weight:600; }
+nav.toc h2:first-child { margin-top:0; }
+nav.toc ul { list-style:none; margin:0; padding:0; border-left:1px solid var(--rule); }
+nav.toc li a { display:block; padding:4px 0 4px 12px; color:var(--muted); text-decoration:none; border-left:2px solid transparent; margin-left:-1px; }
+nav.toc li a:hover { color:var(--ink); border-left-color:var(--accent); }
+main { min-width:0; }
+article { max-width:76ch; }
+article > h2 { font-family:var(--sans); font-weight:600; font-size:24px; margin:56px 0 16px; padding-top:16px; border-top:1px solid var(--rule); letter-spacing:-.01em; text-wrap:balance; }
+article > h2:first-of-type { margin-top:8px; border-top:0; padding-top:0; }
+article h3 { font-family:var(--sans); font-weight:600; font-size:17px; margin:32px 0 10px; }
+article p, article li { max-width:70ch; }
+article ul, article ol { padding-left:22px; }
+article li { margin:4px 0; }
+article li > input[type=checkbox] { margin:0 8px 0 -22px; accent-color:var(--accent); vertical-align:-1px; }
+article li:has(> input[type=checkbox]) { list-style:none; }
+code { font-family:var(--mono); font-size:.86em; background:var(--code); padding:1px 5px; border-radius:3px; }
+pre { background:var(--code); padding:12px 14px; border-radius:6px; overflow-x:auto; font-size:13px; line-height:1.5; }
+pre code { background:none; padding:0; font-size:inherit; }
+blockquote { margin:16px 0; padding:8px 16px; border-left:3px solid var(--accent); background:var(--tint); }
+blockquote p { margin:6px 0; }
+.tablewrap { overflow-x:auto; margin:16px 0; }
+table { border-collapse:collapse; width:100%; font-family:var(--sans); font-size:14px; line-height:1.4; }
+th, td { text-align:left; vertical-align:top; padding:8px 10px; border-bottom:1px solid var(--rule); }
+th { font-weight:600; font-size:12.5px; letter-spacing:.02em; color:var(--muted); border-bottom:2px solid var(--rule); white-space:nowrap; }
+td { font-variant-numeric:tabular-nums; }
+table.meta { width:auto; font-size:13.5px; margin-bottom:8px; }
+table.meta thead { display:none; }
+table.meta td:first-child { color:var(--muted); padding-left:0; white-space:nowrap; }
+figure.diagram { margin:24px 0 28px; max-width:none; width:min(100%, 1240px); }
+figure.diagram a { display:block; overflow-x:auto; background:#FFFFFF; border:1px solid var(--rule); border-radius:6px; }
+figure.diagram img { display:block; width:100%; min-width:720px; max-width:none; height:auto; }
+figure.diagram figcaption { font-family:var(--sans); font-size:12.5px; color:var(--muted); margin-top:8px; }
+.section-mark { font-family:var(--sans); font-size:12px; letter-spacing:.08em; text-transform:uppercase; color:var(--accent-ink); font-weight:600; margin:72px 0 -40px; }
+.section-mark:first-of-type { margin-top:0; }
+hr { border:0; border-top:1px solid var(--rule); margin:32px 0; }
+@media (max-width: 900px) {
+  .shell { grid-template-columns:1fr; gap:24px; }
+  nav.toc { position:static; max-height:none; }
+  figure.diagram img { min-width:640px; }
+}
+@media (prefers-reduced-motion: no-preference) { html { scroll-behavior:smooth; } }
+</style>
+</head>
+<body>
+
+<header class="masthead">
+  <p class="eyebrow">Loom for AWS · fork of awslabs/loom · docs/internal-deployment</p>
+  <h1>Loom Internal Deployment</h1>
+  <p class="lede">Design and implementation plan for running the Loom management plane privately, behind an internal ALB in the existing platform VPC, with agents on Bedrock AgentCore Runtime in VPC network mode.</p>
+  <div class="facts"><span>Status <b>Draft for review</b></span><span>Date <b>2026-09-12</b></span><span>Run cost <b>≈ $73 / month</b> (existing NAT)</span><span>Effort <b>≈ 6 days</b></span><span>Source <b><a href="https://github.com/Luganskiy/loom/tree/feat/internal-alb/docs/internal-deployment">GitHub</a></b></span></div>
+</header>
+
+<div class="shell">
+<nav class="toc" aria-label="Contents">
+  <h2>Design</h2><ul><li><a href="#design-1-summary">1. Summary</a></li><li><a href="#design-2-goals-and-non-goals">2. Goals and non-goals</a></li><li><a href="#design-3-context-and-constraints">3. Context and constraints</a></li><li><a href="#design-4-architecture">4. Architecture</a></li><li><a href="#design-5-network-design">5. Network design</a></li><li><a href="#design-6-request-and-authentication-flow">6. Request and authentication flow</a></li><li><a href="#design-7-data">7. Data</a></li><li><a href="#design-8-agents-in-vpc-network-mode">8. Agents in VPC network mode</a></li><li><a href="#design-9-deployment">9. Deployment</a></li><li><a href="#design-10-sizing-and-cost">10. Sizing and cost</a></li><li><a href="#design-11-reliability-and-operations">11. Reliability and operations</a></li><li><a href="#design-12-security">12. Security</a></li><li><a href="#design-13-decisions">13. Decisions</a></li><li><a href="#design-14-risks-and-open-questions">14. Risks and open questions</a></li><li><a href="#design-15-alternatives-considered">15. Alternatives considered</a></li><li><a href="#design-appendix-a-parameter-reference-changed-or-newly-relevant">Appendix A. Parameter reference (changed or newly relevant)</a></li></ul>
+  <h2>Plan</h2><ul><li><a href="#plan-phase-0-decisions-and-prerequisites-day">Phase 0 — Decisions and prerequisites (½ day)</a></li><li><a href="#plan-phase-1-fork-changes-1-2-days">Phase 1 — Fork changes (1–2 days)</a></li><li><a href="#plan-phase-2-environment-configuration-day">Phase 2 — Environment configuration (½ day)</a></li><li><a href="#plan-phase-3-foundation-stacks-day-mostly-waiting">Phase 3 — Foundation stacks (½ day, mostly waiting)</a></li><li><a href="#plan-phase-4-build-and-deploy-services-day">Phase 4 — Build and deploy services (½ day)</a></li><li><a href="#plan-phase-5-private-access-path-day">Phase 5 — Private access path (½ day)</a></li><li><a href="#plan-phase-6-operations-readiness-1-day">Phase 6 — Operations readiness (1 day)</a></li><li><a href="#plan-phase-7-agents-in-vpc-mode-day">Phase 7 — Agents in VPC mode (½ day)</a></li><li><a href="#plan-phase-8-hardening-and-handover-day">Phase 8 — Hardening and handover (½ day)</a></li><li><a href="#plan-effort-and-cost-summary">Effort and cost summary</a></li><li><a href="#plan-out-of-scope-for-this-plan">Out of scope for this plan</a></li></ul>
+</nav>
+<main>
+  <p class="section-mark" id="design">Part 1 · Design</p>
+  <article><table class="meta">
+<thead>
+<tr>
+<th></th>
+<th></th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Status</td>
+<td>Draft for review</td>
+</tr>
+<tr>
+<td>Date</td>
+<td>2026-09-12</td>
+</tr>
+<tr>
+<td>Scope</td>
+<td>Running the Loom management plane privately, production-grade, at a small-team budget</td>
+</tr>
+<tr>
+<td>Companion</td>
+<td><a href="#plan">PLAN.md</a> (implementation plan), <a href="#design-4-architecture">diagrams/</a> (AWS architecture diagrams)</td>
+</tr>
+</tbody></table>
+<h2 id="design-1-summary">1. Summary</h2>
+<p>Loom&#39;s shipped Phase 3 topology (internet-facing ALB, three backend tasks, Multi-AZ RDS with RDS Proxy, EC2 bastion) is sized for a public, multi-team deployment and costs roughly $265 a month. This design keeps the same building blocks and the same CloudFormation/SAM stacks, but:</p>
+<ul>
+<li>makes the ALB <strong>internal</strong> (selectable via the new <code>pAlbScheme</code> parameter) and reuses the existing platform VPC, so the management UI is reachable only over private connectivity;</li>
+<li>runs <strong>one backend task and one frontend task</strong> on on-demand Fargate, with deployment guards (circuit breaker, rollback, alarms) that upstream does not ship;</li>
+<li>uses a <strong>single-AZ RDS for PostgreSQL</strong> instance with 7-day automated backups and deletion protection, and no RDS Proxy;</li>
+<li>drops the EC2 bastion in favour of ECS Exec;</li>
+<li>keeps agents on <strong>Amazon Bedrock AgentCore Runtime in VPC network mode</strong>, so agents reach VPC-internal resources through the same subnets.</li>
+</ul>
+<p>Expected run cost is about $70 to $75 a month when the existing NAT gateway is reused, or $105 to $110 with a dedicated one. Model and AgentCore usage is billed separately and is not affected by this design.</p>
+<h2 id="design-2-goals-and-non-goals">2. Goals and non-goals</h2>
+<p><strong>Goals</strong></p>
+<ol>
+<li>No public entry point to the Loom UI or API. All operator traffic enters through private connectivity and an internal ALB.</li>
+<li>Stable enough for daily internal use: safe deploys, automatic rollback, alarms, tested backups, documented restore.</li>
+<li>Minimal spend consistent with goals 1 and 2. Every cut is justified in §10.</li>
+<li>Stay a thin fork of <code>awslabs/loom</code>: parameters and additive templates, no structural rewrites, so upstream can be merged regularly.</li>
+<li>Agents deployed from Loom can reach private resources (internal MCP servers, databases) without leaving the VPC.</li>
+</ol>
+<p><strong>Non-goals</strong></p>
+<ul>
+<li>High availability across AZs for the management plane. A single-task outage is tolerated for minutes.</li>
+<li>Multi-region, multi-account, or multi-tenant operation.</li>
+<li>Replacing Loom&#39;s data model, auth model, or UI.</li>
+<li>Public agent endpoints. Agents invoked from outside the VPC go through PrivateLink or the AgentCore data plane with IAM/OAuth, unchanged from upstream.</li>
+</ul>
+<h2 id="design-3-context-and-constraints">3. Context and constraints</h2>
+<ul>
+<li><strong>What Loom is.</strong> A control plane for building, deploying, and operating agents on Bedrock AgentCore. Agents keep running whether or not the Loom UI is up. Loom&#39;s database holds metadata (agent records, MCP/A2A registrations, settings), not agent state.</li>
+<li><strong>Where it runs.</strong> The AgentCore platform already has a VPC with private subnets, a NAT gateway and an internet gateway. This design deploys Loom into that VPC and region. Existing resources are referenced by parameter; no IDs are hardcoded in the fork.</li>
+<li><strong>Who uses it.</strong> A small number of operators. Cognito&#39;s free tier covers this many times over.</li>
+<li><strong>Upstream facts the design relies on</strong> (verified against the fork at the commit that added <code>pAlbScheme</code>):<ul>
+<li>Both containers listen on port 8000. The ALB routes <code>/api/*</code> and <code>/health</code> to the backend target group (rule priority 1) and everything else to the frontend.</li>
+<li>The frontend authenticates against the Cognito <code>cognito-idp</code> public endpoint directly from the browser (<code>InitiateAuth</code>, <code>USER_PASSWORD_AUTH</code>). The backend verifies the JWT on every API call.</li>
+<li>The backend talks to AWS APIs over the public endpoints: AgentCore control and data planes, Bedrock, Secrets Manager, S3, CloudWatch Logs, Cognito, IAM, CloudFormation, ECR, Agent Registry. Private subnets therefore need NAT (or a long list of VPC endpoints).</li>
+<li>Both ECS services pin <code>LaunchType: FARGATE</code>, so they run on on-demand capacity regardless of the cluster&#39;s Spot default.</li>
+<li>Upstream ships no CloudWatch alarms, no ECS deployment circuit breaker, and RDS <code>DeletionProtection: false</code>.</li>
+<li>The frontend service runs in public subnets with public IPs assigned; the backend runs in private subnets without.</li>
+<li>The backend receives <code>LOOM_DATABASE_URL</code> from the <code>database-url</code> secret created by the RDS stack; that secret already uses the instance endpoint when the proxy is disabled, so no env change is needed for the no-proxy setup.</li>
+<li>The Cognito stack always creates its demo users; there is no parameter to skip them.</li>
+<li>The RDS template only allows <code>db.t3.*</code> instance classes.</li>
+</ul>
+</li>
+</ul>
+<h2 id="design-4-architecture">4. Architecture</h2>
+<figure class="diagram"><a href="diagrams/architecture.svg" target="_blank" rel="noopener" title="Open full-size SVG"><img src="diagrams/architecture.svg" alt="Target architecture" loading="lazy"></a><figcaption>Target architecture · <a href="diagrams/architecture.svg" target="_blank" rel="noopener">open SVG</a></figcaption></figure>
+<p>Numbered flows in the diagram: (1) browser signs in against Cognito over the internet and receives ID and access tokens; (2) the browser resolves the Loom hostname through the public hosted zone and gets the ALB&#39;s private IPs; (3) HTTPS reaches the internal ALB over private connectivity, restricted by <code>pAlbIngressCidr</code>; (4) the ALB routes by path to the frontend or backend task; (5) the backend uses RDS over 5432; (6) the backend calls AWS APIs through the NAT gateway; (7) AgentCore provisions an ENI in the private subnet for every agent deployed in VPC network mode.</p>
+<h3 id="design-4-1-components">4.1 Components</h3>
+<table>
+<thead>
+<tr>
+<th>Component</th>
+<th>Stack (template)</th>
+<th>This design</th>
+<th>Upstream default</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Route 53 hosted zone</td>
+<td><code>loom-dns</code> (<code>shared/iac/dns.yaml</code>)</td>
+<td>Public zone for the Loom subdomain; alias resolves to private IPs</td>
+<td>same</td>
+</tr>
+<tr>
+<td>ACM certificate</td>
+<td><code>loom-infra</code> (<code>shared/iac/infra.yaml</code>)</td>
+<td>DNS-validated through the public zone</td>
+<td>same</td>
+</tr>
+<tr>
+<td>Application Load Balancer</td>
+<td><code>loom-infra</code></td>
+<td><code>pAlbScheme=internal</code>, placed in the two private subnets, HTTPS 443 only, TLS 1.3 policy, access logs to the logging bucket, 300 s idle timeout for SSE</td>
+<td><code>internet-facing</code> in public subnets</td>
+</tr>
+<tr>
+<td>ALB security group</td>
+<td><code>loom-infra</code></td>
+<td>Ingress 443 from <code>pAlbIngressCidr</code> (VPC or corporate CIDR)</td>
+<td>ingress from an operator-supplied CIDR</td>
+</tr>
+<tr>
+<td>ECS security group</td>
+<td><code>loom-infra</code></td>
+<td>Ingress 8000 from the ALB security group only</td>
+<td>same</td>
+</tr>
+<tr>
+<td>ECR repositories + KMS key</td>
+<td><code>loom-infra</code></td>
+<td>Two repos, scan on push, keep last 10 images</td>
+<td>same</td>
+</tr>
+<tr>
+<td>S3 artifact bucket</td>
+<td><code>loom-infra</code></td>
+<td>Versioned, encrypted, access-logged; holds agent code bundles</td>
+<td>same</td>
+</tr>
+<tr>
+<td>Cognito user pool</td>
+<td><code>loom-cognito</code> (<code>shared/iac/cognito.yaml</code>)</td>
+<td>One pool, two app clients, 12 groups (<code>t-admin</code>, <code>t-user</code>, <code>g-*</code>); demo users not created (<code>pCreateDemoUsers=false</code>, fork change)</td>
+<td>same, demo users always created</td>
+</tr>
+<tr>
+<td>ECS cluster</td>
+<td><code>loom-ecs-cluster</code> (<code>shared/iac/ecs.yaml</code>)</td>
+<td>Container Insights on</td>
+<td>same</td>
+</tr>
+<tr>
+<td>RDS for PostgreSQL</td>
+<td><code>loom-rds</code> (<code>backend/iac/rds.yaml</code>)</td>
+<td><code>db.t3.micro</code>, single-AZ, gp3, encrypted, IAM auth on, 7-day backups, deletion protection <strong>on</strong>, no RDS Proxy</td>
+<td><code>db.t3.small</code>, Multi-AZ optional, Proxy on</td>
+</tr>
+<tr>
+<td>Backend service</td>
+<td><code>backend/iac/ecs.yaml</code></td>
+<td>1 task, 0.5 vCPU / 1 GB, on-demand Fargate, private subnets, circuit breaker + rollback, ECS Exec enabled</td>
+<td>3 tasks, 1 vCPU / 2 GB, autoscaling on CPU</td>
+</tr>
+<tr>
+<td>Frontend service</td>
+<td><code>frontend/iac/ecs.yaml</code></td>
+<td>1 task, 0.25 vCPU / 0.5 GB, <strong>private subnets, no public IP</strong></td>
+<td>2 tasks, public subnets, public IP</td>
+</tr>
+<tr>
+<td>CloudWatch</td>
+<td>task log groups (KMS-encrypted, 30-day retention) + <strong>new alarms stack</strong></td>
+<td>5xx, unhealthy targets, task count, CPU/memory, RDS storage and CPU → SNS</td>
+<td>log groups only</td>
+</tr>
+<tr>
+<td>EC2 bastion</td>
+<td><code>loom-ec2</code> (<code>backend/iac/ec2.yaml</code>)</td>
+<td><strong>Not deployed.</strong> ECS Exec into the backend task replaces it</td>
+<td>deployed for SSM tunnel</td>
+</tr>
+<tr>
+<td>Agent security group</td>
+<td><code>loom-agent-sg</code> (<code>shared/iac/security_group.yaml</code>)</td>
+<td>Deployed; referenced by the VPC config profile in Loom Settings</td>
+<td>optional</td>
+</tr>
+<tr>
+<td>PrivateLink ingress</td>
+<td><code>shared/iac/privatelink.yaml</code></td>
+<td>Optional; only if consumers in other VPCs must invoke agents privately</td>
+<td>optional</td>
+</tr>
+</tbody></table>
+<h3 id="design-4-2-what-changes-in-the-fork">4.2 What changes in the fork</h3>
+<p>All changes are parameters, defaults, or additive templates. See PLAN.md phase 1 for the task list.</p>
+<table>
+<thead>
+<tr>
+<th>Change</th>
+<th>Why</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>pAlbScheme</code> parameter on the ALB, default <code>internal</code> (done)</td>
+<td>Internal posture with one switch; upstream behaviour recoverable by setting <code>internet-facing</code></td>
+</tr>
+<tr>
+<td>Frontend service to private subnets, <code>AssignPublicIp: DISABLED</code></td>
+<td>The frontend has no reason to hold a public IP; matches the backend</td>
+</tr>
+<tr>
+<td>ECS <code>DeploymentConfiguration</code> with <code>DeploymentCircuitBreaker</code> (enable + rollback), <code>MinimumHealthyPercent: 100</code>, <code>MaximumPercent: 200</code></td>
+<td>A single-task service can deploy without downtime only if the new task starts before the old one stops, and a broken image must roll back rather than stay broken</td>
+</tr>
+<tr>
+<td><code>EnableExecuteCommand: true</code> + SSM permissions on the task role</td>
+<td>Replaces the bastion for occasional DB access and debugging</td>
+</tr>
+<tr>
+<td>RDS <code>DeletionProtection</code> as a parameter, default <code>true</code></td>
+<td>Upstream hardcodes false</td>
+</tr>
+<tr>
+<td>New <code>shared/iac/alarms.yaml</code> (SNS topic + alarms)</td>
+<td>Upstream has no alarms; &quot;stable&quot; needs them</td>
+</tr>
+<tr>
+<td><code>pCreateDemoUsers</code> condition on <code>shared/iac/cognito.yaml</code>, default <code>false</code></td>
+<td>Upstream always creates 22 demo users; a production pool should not have them</td>
+</tr>
+<tr>
+<td><code>[optional]</code> add <code>db.t4g.*</code> to the RDS instance class allowed values</td>
+<td>Graviton classes are about 10 % cheaper; not required</td>
+</tr>
+</tbody></table>
+<h2 id="design-5-network-design">5. Network design</h2>
+<h3 id="design-5-1-placement">5.1 Placement</h3>
+<table>
+<thead>
+<tr>
+<th>Tier</th>
+<th>Subnets</th>
+<th>Public IP</th>
+<th>Ingress</th>
+<th>Egress</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>ALB (internal)</td>
+<td>2 private subnets, 2 AZs (ALB requirement)</td>
+<td>none</td>
+<td>443 from <code>pAlbIngressCidr</code></td>
+<td>to ECS SG on 8000</td>
+</tr>
+<tr>
+<td>Frontend + backend tasks</td>
+<td>private subnets</td>
+<td>none</td>
+<td>8000 from ALB SG</td>
+<td>NAT gateway → AWS public endpoints</td>
+</tr>
+<tr>
+<td>RDS</td>
+<td>private subnets (subnet group across both AZs)</td>
+<td>none</td>
+<td>5432 from backend task SG</td>
+<td>none</td>
+</tr>
+<tr>
+<td>Agent runtime ENIs</td>
+<td>private subnets designated for agents</td>
+<td>none</td>
+<td>per <code>loom-agent-sg</code> (443, 80, 3000, 8080 from allowed CIDR/SG)</td>
+<td>NAT gateway (AgentCore VPC mode routes all agent egress through the VPC)</td>
+</tr>
+</tbody></table>
+<p>The ALB parameter is still named <code>pPublicSubnetIds</code> in upstream; in this design it is fed the private subnet IDs. The name is kept to avoid touching every makefile and env file.</p>
+<h3 id="design-5-2-why-nat-not-vpc-endpoints-and-why-not-public-ips">5.2 Why NAT, not VPC endpoints, and why not public IPs</h3>
+<ul>
+<li>Putting the backend on public IPs to avoid NAT contradicts the internal posture: the backend holds the credentials that deploy agents. Rejected.</li>
+<li>Interface endpoints for the services the backend uses (ECR API, ECR DKR, CloudWatch Logs, Secrets Manager, Bedrock, Bedrock AgentCore, STS, Cognito, plus S3 gateway) cost about $7.30 each per month per AZ. Six or more endpoints cost more than one NAT gateway and still would not cover every API the backend calls.</li>
+<li>The platform VPC already has a NAT gateway. Reusing it makes the NAT cost for Loom zero. If Loom must live in its own VPC, budget $33 a month plus data for a NAT gateway.</li>
+</ul>
+<h3 id="design-5-3-reaching-an-internal-alb">5.3 Reaching an internal ALB</h3>
+<p>The internal ALB is only useful if operators have a path into the VPC. This is the one cost upstream never mentions.</p>
+<table>
+<thead>
+<tr>
+<th>Option</th>
+<th>Monthly</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Existing corporate VPN / Direct Connect / peering</td>
+<td>$0 extra</td>
+<td>Preferred if it already exists. Set <code>pAlbIngressCidr</code> to the corporate range.</td>
+</tr>
+<tr>
+<td>Tailscale (or similar) subnet router on a <code>t4g.nano</code> in a private subnet</td>
+<td>~$3</td>
+<td>Advertises the VPC CIDR to the tailnet. Self-managed instance, SSM-managed patches.</td>
+</tr>
+<tr>
+<td>AWS Client VPN</td>
+<td>$75+</td>
+<td>Endpoint association per hour plus per-connection hours. More than the ALB and RDS combined. Not recommended at this scale.</td>
+</tr>
+<tr>
+<td>Internet-facing ALB locked to known IPs + Cognito</td>
+<td>$0</td>
+<td>Defensible for a small team with fixed egress IPs. Available by setting <code>pAlbScheme=internet-facing</code>. Not the default in this design.</td>
+</tr>
+</tbody></table>
+<p>The design assumes the subnet router unless a corporate VPN exists. See PLAN.md phase 5.</p>
+<h3 id="design-5-4-dns-and-tls">5.4 DNS and TLS</h3>
+<ul>
+<li>The Route 53 hosted zone stays <strong>public</strong> because ACM DNS validation needs a publicly resolvable CNAME. The A record is an alias to the internal ALB, so it resolves to private IPs. That leaks the existence of the hostname and private IPs, which is acceptable for an internal tool; it does not expose a service.</li>
+<li>If leaking is unacceptable, use a private hosted zone associated with the VPC for the A record and keep the public zone only for ACM validation. This is a small change to <code>dns.yaml</code>/<code>infra.yaml</code> and is listed as optional in the plan.</li>
+<li>TLS terminates on the ALB with the ACM certificate and the <code>ELBSecurityPolicy-TLS13-1-2-2021-06</code> policy. Tasks speak plain HTTP on 8000 inside the VPC.</li>
+</ul>
+<h2 id="design-6-request-and-authentication-flow">6. Request and authentication flow</h2>
+<figure class="diagram"><a href="diagrams/request-flow.svg" target="_blank" rel="noopener" title="Open full-size SVG"><img src="diagrams/request-flow.svg" alt="Request and authentication flow" loading="lazy"></a><figcaption>Request and authentication flow · <a href="diagrams/request-flow.svg" target="_blank" rel="noopener">open SVG</a></figcaption></figure>
+<ol>
+<li>The SPA calls Cognito&#39;s <code>cognito-idp</code> endpoint directly from the browser and receives ID and access tokens. This is a public AWS endpoint; the client device needs internet access even though the app itself is internal.</li>
+<li>The browser resolves the Loom hostname and gets the internal ALB&#39;s private IPs.</li>
+<li>Over private connectivity the browser opens HTTPS to the ALB. The ALB security group admits only <code>pAlbIngressCidr</code>.</li>
+<li>The ALB serves <code>/</code> from the frontend task (static SPA behind nginx).</li>
+<li>API calls go to <code>/api/*</code> with <code>Authorization: Bearer &lt;JWT&gt;</code>; the ALB forwards them to the backend task.</li>
+<li>The backend fetches Cognito&#39;s JWKS (cached) and verifies signature, issuer, audience, and group claims. Group membership drives Loom&#39;s persona and scope model.</li>
+<li>The backend reads and writes agent metadata in RDS.</li>
+<li>Agent invocations call the AgentCore Runtime data plane and stream SSE chunks back through the backend and the ALB to the browser. The ALB idle timeout is 300 s to keep long streams open.</li>
+</ol>
+<h2 id="design-7-data">7. Data</h2>
+<table>
+<thead>
+<tr>
+<th>Store</th>
+<th>Contents</th>
+<th>Protection</th>
+<th>RPO / RTO</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>RDS for PostgreSQL</td>
+<td>agent, MCP, A2A, memory, registry records; settings; VPC config profiles</td>
+<td>encrypted (KMS), IAM auth, not publicly accessible, deletion protection, automated backups 7 days with 5-minute PITR granularity</td>
+<td>RPO ≤ 5 min; RTO ≈ 20–30 min (restore to a new instance, update the <code>database-url</code> secret to its endpoint, redeploy the backend)</td>
+</tr>
+<tr>
+<td>S3 artifact bucket</td>
+<td>agent code bundles uploaded at deploy time</td>
+<td>versioned, SSE-S3, public access blocked, access-logged, old versions expire after 90 days</td>
+<td>versioned; a deleted bundle is recoverable for 90 days</td>
+</tr>
+<tr>
+<td>Secrets Manager</td>
+<td>RDS credentials, RDS master secret, LiteLLM key (if used)</td>
+<td>KMS CMK, backend execution role read-only to named ARNs</td>
+<td>n/a</td>
+</tr>
+<tr>
+<td>CloudWatch Logs</td>
+<td>task logs (30 days), agent runtime logs</td>
+<td>KMS-encrypted log groups</td>
+<td>n/a</td>
+</tr>
+<tr>
+<td>Cognito</td>
+<td>users, groups</td>
+<td>managed</td>
+<td>export users on a schedule if the pool must be rebuildable</td>
+</tr>
+</tbody></table>
+<p>Single-AZ RDS is the deliberate trade: Multi-AZ doubles the instance cost to protect against an AZ failure that would also take down the single backend task. The backup/restore path above is tested once in PLAN.md phase 6 and documented as a runbook.</p>
+<h2 id="design-8-agents-in-vpc-network-mode">8. Agents in VPC network mode</h2>
+<figure class="diagram"><a href="diagrams/agent-vpc-mode.svg" target="_blank" rel="noopener" title="Open full-size SVG"><img src="diagrams/agent-vpc-mode.svg" alt="Agents in VPC network mode" loading="lazy"></a><figcaption>Agents in VPC network mode · <a href="diagrams/agent-vpc-mode.svg" target="_blank" rel="noopener">open SVG</a></figcaption></figure>
+<ul>
+<li>Loom creates the runtime with <code>networkMode: VPC</code> and the subnet and security group IDs from a named VPC config profile (Loom Settings → Networking). AgentCore then places an ENI it owns in the designated private subnet.</li>
+<li>The agent security group (<code>loom-agent-sg</code> stack) allows 443, 80, 3000 (MCP) and 8080 (A2A) from an allowed CIDR or source security group. Only rules with values are created.</li>
+<li>Inside the VPC the agent reaches internal MCP servers, internal APIs, and data stores directly. Its calls to Bedrock, AgentCore Memory/Gateway/Identity and other AWS APIs also leave through the VPC, so the agent subnets need the NAT route (or endpoints) too.</li>
+<li>Consumers in other VPCs can invoke an agent privately through PrivateLink: the <code>privatelink.yaml</code> stack creates an internal NLB with IP targets on the agent port and a VPC Endpoint Service with <code>AcceptanceRequired: false</code>. This is optional and owned by whoever runs the consuming VPC.</li>
+<li>Agent-to-Loom traffic does not exist: agents never call back into the Loom API.</li>
+</ul>
+<h2 id="design-9-deployment">9. Deployment</h2>
+<figure class="diagram"><a href="diagrams/deploy-pipeline.svg" target="_blank" rel="noopener" title="Open full-size SVG"><img src="diagrams/deploy-pipeline.svg" alt="Build and deploy pipeline" loading="lazy"></a><figcaption>Build and deploy pipeline · <a href="diagrams/deploy-pipeline.svg" target="_blank" rel="noopener">open SVG</a></figcaption></figure>
+<ul>
+<li>Every step is an existing make target driven by <code>shared/etc/common.sh</code> and the per-component <code>environment.sh</code>. No new tooling.</li>
+<li>Images are built with podman and pushed to ECR tagged with the git SHA; the ECS task definition references the immutable tag.</li>
+<li>Stacks deploy in the upstream order: dns → cognito → infra → ecs-cluster → rds → agent-sg → alarms → backend → frontend. The <code>pAlbScheme</code>, CIDR, subnet and sizing parameters come from the env files.</li>
+<li>Service updates are rolling with <code>MinimumHealthyPercent: 100</code> and <code>MaximumPercent: 200</code>, so the new task must pass the ALB health check before the old task drains. The circuit breaker rolls back automatically on a failed deployment.</li>
+<li>Deploys are manual and reviewed. A CI job can call the same targets later without changing the design.</li>
+</ul>
+<h2 id="design-10-sizing-and-cost">10. Sizing and cost</h2>
+<p>Estimates are on-demand, us-west-2, 730 h/month, excluding data transfer and excluding Bedrock/AgentCore usage. Round numbers; verify against the pricing calculator before committing budget.</p>
+<table>
+<thead>
+<tr>
+<th>Item</th>
+<th>Setting</th>
+<th>≈ $/month</th>
+<th>Shipped default</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Backend Fargate</td>
+<td>1 × 0.5 vCPU / 1 GB, on-demand</td>
+<td>18</td>
+<td>3 × 1 vCPU / 2 GB ≈ 108</td>
+</tr>
+<tr>
+<td>Frontend Fargate</td>
+<td>1 × 0.25 vCPU / 0.5 GB</td>
+<td>9</td>
+<td>2 × ≈ 18</td>
+</tr>
+<tr>
+<td>RDS PostgreSQL</td>
+<td>db.t3.micro single-AZ, 20 GB gp3</td>
+<td>15</td>
+<td>db.t3.small Multi-AZ + Proxy ≈ 75</td>
+</tr>
+<tr>
+<td>Internal ALB</td>
+<td>fixed + LCU</td>
+<td>18</td>
+<td>18</td>
+</tr>
+<tr>
+<td>NAT gateway</td>
+<td>reused</td>
+<td>0</td>
+<td>33 + data</td>
+</tr>
+<tr>
+<td>Subnet router</td>
+<td>t4g.nano</td>
+<td>3</td>
+<td>n/a</td>
+</tr>
+<tr>
+<td>CloudWatch</td>
+<td>logs, 6 alarms, Container Insights</td>
+<td>4</td>
+<td>4</td>
+</tr>
+<tr>
+<td>KMS</td>
+<td>3 CMKs</td>
+<td>3</td>
+<td>3</td>
+</tr>
+<tr>
+<td>Secrets Manager, Route 53, ECR, S3</td>
+<td></td>
+<td>3</td>
+<td>3</td>
+</tr>
+<tr>
+<td>EC2 bastion</td>
+<td>not deployed</td>
+<td>0</td>
+<td>8</td>
+</tr>
+<tr>
+<td><strong>Total</strong></td>
+<td></td>
+<td><strong>≈ 73</strong></td>
+<td><strong>≈ 270</strong></td>
+</tr>
+</tbody></table>
+<p>With a dedicated NAT gateway add about $33 plus $0.045 per GB. Adding a second backend task for AZ resilience adds about $18.</p>
+<p>Sizing rationale: the backend is I/O-bound (waiting on AWS APIs and SSE streams), so 0.5 vCPU / 1 GB is ample for a handful of concurrent operators; upstream&#39;s 1 vCPU / 2 GB is kept as the first thing to raise if memory alarms fire. <code>db.t3.micro</code> (1 GB) comfortably holds Loom&#39;s metadata tables; upgrade to <code>db.t3.small</code> if <code>FreeableMemory</code> alarms. Graviton <code>db.t4g</code> classes need the optional allowed-values change first.</p>
+<h2 id="design-11-reliability-and-operations">11. Reliability and operations</h2>
+<p><strong>Failure modes and responses</strong></p>
+<table>
+<thead>
+<tr>
+<th>Failure</th>
+<th>Effect</th>
+<th>Detection</th>
+<th>Response</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Backend task crashes</td>
+<td>UI errors for ~1–2 min while ECS replaces the task</td>
+<td><code>HealthyHostCount &lt; 1</code>, 5xx alarm</td>
+<td>automatic; investigate logs</td>
+</tr>
+<tr>
+<td>Bad backend image deployed</td>
+<td>new task fails health check</td>
+<td>circuit breaker</td>
+<td>automatic rollback to the previous task definition</td>
+</tr>
+<tr>
+<td>RDS instance failure</td>
+<td>API unavailable</td>
+<td>RDS <code>CPUUtilization</code>/<code>FreeStorageSpace</code>/connection alarms, 5xx</td>
+<td>restore from automated backup to a new instance (runbook), repoint, redeploy</td>
+</tr>
+<tr>
+<td>AZ outage (single-AZ RDS or task AZ)</td>
+<td>outage until RDS is restored in the other AZ</td>
+<td>alarms</td>
+<td>restore runbook; agents keep running</td>
+</tr>
+<tr>
+<td>NAT gateway or route loss</td>
+<td>backend cannot reach AWS APIs; UI loads, actions fail</td>
+<td>5xx alarm, backend logs</td>
+<td>platform network runbook</td>
+</tr>
+<tr>
+<td>Private connectivity down</td>
+<td>operators cannot reach the UI; nothing else affected</td>
+<td>user report</td>
+<td>fix VPN / subnet router</td>
+</tr>
+<tr>
+<td>Certificate expiry</td>
+<td>ACM renews automatically while the DNS validation record exists</td>
+<td>ACM <code>DaysToExpiry</code> alarm (optional)</td>
+<td>keep the CNAME</td>
+</tr>
+</tbody></table>
+<p><strong>Alarms (new <code>alarms.yaml</code> stack, all → one SNS topic)</strong></p>
+<ul>
+<li>ALB <code>HTTPCode_Target_5XX_Count</code> ≥ 5 in 5 min</li>
+<li>ALB <code>UnHealthyHostCount</code> ≥ 1 for 5 min (per target group)</li>
+<li>ECS <code>RunningTaskCount</code> &lt; desired for 5 min (backend, frontend)</li>
+<li>ECS CPU or memory &gt; 80 % for 15 min (backend)</li>
+<li>RDS <code>FreeStorageSpace</code> &lt; 2 GB, <code>CPUUtilization</code> &gt; 80 % for 15 min, <code>DatabaseConnections</code> near the instance limit</li>
+<li>Optional: AWS Budgets alert at the agreed monthly figure</li>
+</ul>
+<p><strong>Runbooks to write (PLAN.md phase 6)</strong>: restore RDS from backup; roll back a deployment manually; rotate the RDS credential; ECS Exec into the backend; re-sync the fork with upstream.</p>
+<h2 id="design-12-security">12. Security</h2>
+<ul>
+<li><strong>No public endpoints.</strong> Internal ALB, tasks and RDS without public IPs, agents in VPC mode. The only public interactions are the browser&#39;s calls to Cognito and the backend&#39;s SigV4 calls to AWS APIs via NAT.</li>
+<li><strong>Ingress.</strong> ALB security group admits only <code>pAlbIngressCidr</code>. ECS security group admits only the ALB. RDS security group admits only the backend task security group.</li>
+<li><strong>Identity.</strong> Cognito user pool with groups mapped to Loom personas and scopes; JWT verified server-side on every request. Federation to Entra ID/Okta/OIDC is supported upstream if needed later.</li>
+<li><strong>Secrets.</strong> Only Secrets Manager ARNs are passed to tasks; no secret values in env files under git. The fork&#39;s example env files contain placeholders only.</li>
+<li><strong>Least privilege.</strong> Task role stays scoped to the services Loom needs (AgentCore, Bedrock, IAM PassRole for agent roles, S3 bucket, Secrets ARNs, Cognito pool, CloudFormation, ECR). Phase 8 reviews every <code>*</code> resource.</li>
+<li><strong>Encryption.</strong> KMS CMKs for ECR, secrets, and log groups; RDS storage encrypted; S3 SSE.</li>
+<li><strong>Deletion safety.</strong> RDS deletion protection on; S3 bucket retained on stack delete (upstream). Loom&#39;s own &quot;delete agent&quot; API defaults to leaving AWS resources in place; operators must tick cleanup. This is upstream behaviour and is documented in the runbook.</li>
+<li><strong>Supply chain.</strong> ECR scan on push; images pinned by SHA tag.</li>
+</ul>
+<h2 id="design-13-decisions">13. Decisions</h2>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>Decision</th>
+<th>Alternatives</th>
+<th>Rationale</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>D1</td>
+<td>Internal ALB via <code>pAlbScheme</code> (default <code>internal</code>)</td>
+<td>internet-facing + CIDR lock; API Gateway VPC link; single EC2</td>
+<td>Meets &quot;no public endpoint&quot; with a one-line template change; keeps upstream ECS/ALB templates intact</td>
+</tr>
+<tr>
+<td>D2</td>
+<td>Reuse the platform VPC and NAT</td>
+<td>Dedicated VPC</td>
+<td>Saves $33+/month and keeps agents and Loom in one network; no isolation requirement exists</td>
+</tr>
+<tr>
+<td>D3</td>
+<td>1 backend task on-demand, with circuit breaker</td>
+<td>2 tasks; Spot</td>
+<td>Spot reclaims kill SSE sessions; a second task buys AZ resilience the single-AZ DB does not have anyway</td>
+</tr>
+<tr>
+<td>D4</td>
+<td>Single-AZ RDS, no Proxy, deletion protection on</td>
+<td>Multi-AZ; Proxy</td>
+<td>Metadata-only DB; backups give RPO ≤ 5 min; Proxy only pays off with many connections</td>
+</tr>
+<tr>
+<td>D5</td>
+<td>Drop the bastion; use ECS Exec</td>
+<td>Keep bastion</td>
+<td>Bastion exists only for an SSM tunnel; ECS Exec covers it at zero cost</td>
+</tr>
+<tr>
+<td>D6</td>
+<td>Keep the public hosted zone with a private-IP alias</td>
+<td>Private hosted zone</td>
+<td>ACM validation needs the public zone; hostname leak is acceptable; private zone listed as optional</td>
+</tr>
+<tr>
+<td>D7</td>
+<td>Subnet router as the default access path</td>
+<td>Client VPN; corporate VPN</td>
+<td>Cheapest working path if no corporate VPN exists; replaceable without touching Loom</td>
+</tr>
+<tr>
+<td>D8</td>
+<td>Alarms as a separate additive stack</td>
+<td>Edit upstream ECS/RDS templates</td>
+<td>Keeps the upstream diff small; alarms can be dropped or replaced independently</td>
+</tr>
+</tbody></table>
+<h2 id="design-14-risks-and-open-questions">14. Risks and open questions</h2>
+<ul>
+<li><strong>Access path.</strong> Whether a corporate VPN exists decides between D7&#39;s subnet router and $0. Confirm before phase 5.</li>
+<li><strong>AgentCore VPC mode egress.</strong> Agent subnets must route to the NAT gateway; if they are isolated subnets, model calls fail. Verify the route table of the designated subnets.</li>
+<li><strong>Browser needs internet for Cognito.</strong> Fully air-gapped clients cannot sign in. Acceptable for the intended users.</li>
+<li><strong>Upstream drift.</strong> Upstream moves quickly (recent Integrations page, dependabot bumps). Merge upstream monthly; the fork&#39;s diff is small by design.</li>
+<li><strong>Loom&#39;s delete semantics.</strong> <code>DELETE /api/agents/{id}</code> leaves AWS resources running unless cleanup is requested. Document and consider a cost-guard check.</li>
+<li><strong>Certificate validation on first deploy</strong> requires the parent zone&#39;s NS delegation to be live before <code>loom-infra</code> can complete.</li>
+</ul>
+<h2 id="design-15-alternatives-considered">15. Alternatives considered</h2>
+<ul>
+<li><strong>Run Loom locally, agents in AWS.</strong> Zero-cost and already proven in the August evaluation. Rejected for the production requirement (shared, always-on UI), but remains the fallback and the development mode.</li>
+<li><strong>Single EC2 instance with docker compose and SQLite.</strong> About $15 a month. Rejected: abandons the upstream templates, SQLite is single-writer, and it is harder to keep in sync with upstream.</li>
+<li><strong>Shipped Phase 3 as-is.</strong> Rejected on cost (~$270) and on the public ALB.</li>
+</ul>
+<h2 id="design-appendix-a-parameter-reference-changed-or-newly-relevant">Appendix A. Parameter reference (changed or newly relevant)</h2>
+<table>
+<thead>
+<tr>
+<th>Variable (env)</th>
+<th>Stack parameter</th>
+<th>Value in this design</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>PUBLIC_SUBNET_IDS</code> → <code>P_INFRA_PUBLIC_SUBNET_IDS</code></td>
+<td><code>pPublicSubnetIds</code></td>
+<td>the two <strong>private</strong> subnet IDs (ALB placement)</td>
+</tr>
+<tr>
+<td><code>ALB_INGRESS_CIDR</code> → <code>P_INFRA_ALB_INGRESS_CIDR</code></td>
+<td><code>pAlbIngressCidr</code></td>
+<td>VPC CIDR, or the VPN/tailnet range</td>
+</tr>
+<tr>
+<td><code>P_INFRA_ALB_SCHEME</code></td>
+<td><code>pAlbScheme</code></td>
+<td><code>internal</code></td>
+</tr>
+<tr>
+<td><code>P_ECS_BACKEND_CPU</code> / <code>_MEMORY</code> / <code>_DESIRED_COUNT</code></td>
+<td>backend task size</td>
+<td><code>512</code> / <code>1024</code> / <code>1</code></td>
+</tr>
+<tr>
+<td><code>P_ECS_FRONTEND_CPU</code> / <code>_MEMORY</code> / <code>_DESIRED_COUNT</code></td>
+<td>frontend task size</td>
+<td><code>256</code> / <code>512</code> / <code>1</code></td>
+</tr>
+<tr>
+<td><code>P_ECS_PUBLIC_SUBNET_IDS</code> (frontend)</td>
+<td>frontend subnets</td>
+<td>private subnet IDs (after the phase 1 change)</td>
+</tr>
+<tr>
+<td>RDS instance class</td>
+<td><code>pDbInstanceClass</code></td>
+<td><code>db.t3.micro</code></td>
+</tr>
+<tr>
+<td>RDS Multi-AZ</td>
+<td><code>pDbMultiAZ</code></td>
+<td><code>false</code></td>
+</tr>
+<tr>
+<td>RDS Proxy</td>
+<td><code>pEnableProxy</code></td>
+<td><code>false</code></td>
+</tr>
+<tr>
+<td>RDS deletion protection</td>
+<td><code>pDeletionProtection</code> (new)</td>
+<td><code>true</code></td>
+</tr>
+<tr>
+<td>Cognito demo users</td>
+<td><code>pCreateDemoUsers</code> (new)</td>
+<td><code>false</code></td>
+</tr>
+<tr>
+<td><code>LOOM_DATABASE_URL</code></td>
+<td>injected from the <code>database-url</code> secret</td>
+<td>instance endpoint (automatic when <code>pEnableProxy=false</code>)</td>
+</tr>
+</tbody></table>
+</article>
+  <p class="section-mark" id="plan">Part 2 · Implementation plan</p>
+  <article><p>Companion to <a href="#design">DESIGN.md</a>. Phases are ordered by dependency; each has tasks, an exit criterion, and a rough effort. Effort assumes one person with AWS admin on the target account and familiarity with the repo&#39;s make targets.</p>
+<p>Legend: <code>[ ]</code> open · <code>[x]</code> done · <code>[~]</code> optional</p>
+<h2 id="plan-phase-0-decisions-and-prerequisites-day">Phase 0 — Decisions and prerequisites (½ day)</h2>
+<ul>
+<li><input disabled="" type="checkbox"> Confirm the access path: corporate VPN/peering exists → use it; otherwise plan the subnet router (phase 5). Record the answer in DESIGN.md §5.3.</li>
+<li><input disabled="" type="checkbox"> Confirm the target VPC: reuse the platform VPC (private subnets in two AZs, NAT route present on those subnets) and note which private subnets host the ALB/tasks/RDS and which are designated for agent ENIs.</li>
+<li><input disabled="" type="checkbox"> Confirm region, Loom subdomain, and the parent hosted zone that will delegate it.</li>
+<li><input disabled="" type="checkbox"> Confirm the monthly budget figure for the AWS Budgets alarm (design estimate: $73, or $106 with a dedicated NAT).</li>
+<li><input disabled="" type="checkbox"> Create the SAM deployment bucket and the S3 access-logging bucket if the account does not have them.</li>
+<li><input disabled="" type="checkbox"> Decide whether the public hosted zone with a private-IP alias is acceptable (design default) or a private hosted zone is required (<code>[~]</code> task in phase 3).</li>
+</ul>
+<p><strong>Exit:</strong> every value in DESIGN.md Appendix A has a concrete answer written into <code>shared/etc/common.sh</code> (local, gitignored).</p>
+<h2 id="plan-phase-1-fork-changes-1-2-days">Phase 1 — Fork changes (1–2 days)</h2>
+<p>Branch: <code>feat/internal-alb</code> in <code>github.com/Luganskiy/loom</code>. Keep every change parameter-driven or additive so upstream merges stay trivial.</p>
+<ul>
+<li><input checked="" disabled="" type="checkbox"> <code>pAlbScheme</code> parameter on <code>shared/iac/infra.yaml</code>, default <code>internal</code>; wired through <code>shared/makefile</code> and env examples; docs updated.</li>
+<li><input disabled="" type="checkbox"> <code>frontend/iac/ecs.yaml</code>: task <code>NetworkConfiguration</code> → <code>AssignPublicIp: DISABLED</code>; rename or re-document the subnet parameter so it is fed private subnets (<code>frontend/etc/environment.sh.example</code>, <code>frontend/makefile</code>).</li>
+<li><input disabled="" type="checkbox"> <code>backend/iac/ecs.yaml</code> and <code>frontend/iac/ecs.yaml</code>: add <code>DeploymentConfiguration</code> with <code>DeploymentCircuitBreaker: {Enable: true, Rollback: true}</code>, <code>MinimumHealthyPercent: 100</code>, <code>MaximumPercent: 200</code>.</li>
+<li><input disabled="" type="checkbox"> <code>backend/iac/ecs.yaml</code>: <code>EnableExecuteCommand: true</code> on the service; add <code>ssmmessages:*Channel</code> actions to the task role; document the <code>aws ecs execute-command</code> invocation.</li>
+<li><input disabled="" type="checkbox"> <code>backend/iac/rds.yaml</code>: <code>pDeletionProtection</code> parameter (<code>true</code>/<code>false</code>, default <code>true</code>) → <code>DeletionProtection</code>; expose in <code>backend/makefile</code> and env example.</li>
+<li><input disabled="" type="checkbox"> <code>shared/iac/cognito.yaml</code>: <code>pCreateDemoUsers</code> parameter (default <code>false</code>) and a condition on every demo <code>UserPoolUser</code> / <code>UserPoolUserToGroupAttachment</code>; expose in <code>shared/makefile</code>.</li>
+<li><input disabled="" type="checkbox"> <code>[~]</code> <code>backend/iac/rds.yaml</code>: add <code>db.t4g.micro</code> / <code>db.t4g.small</code> to <code>pDbInstanceClass</code> allowed values.</li>
+<li><input disabled="" type="checkbox"> New <code>shared/iac/alarms.yaml</code>: parameters for ALB ARN suffix, target group ARN suffixes, cluster/service names, RDS identifier, notification email; resources: SNS topic + subscription, the alarms listed in DESIGN.md §11. Add <code>alarms.deploy</code> / <code>alarms.delete</code> targets to <code>shared/makefile</code> and the stack to <code>DEPLOYMENT.md</code>.</li>
+<li><input disabled="" type="checkbox"> <code>[~]</code> <code>shared/iac/dns.yaml</code> / <code>infra.yaml</code>: optional private hosted zone for the A alias (only if phase 0 requires it).</li>
+<li><input disabled="" type="checkbox"> Run <code>cfn-lint</code> on every touched template; run <code>checkov</code> if available; review the diff for secrets.</li>
+<li><input disabled="" type="checkbox"> Open a PR against the fork&#39;s <code>main</code>; merge after review. Tag <code>internal-v1</code>.</li>
+</ul>
+<p><strong>Exit:</strong> <code>main</code> of the fork deploys the internal topology with default parameters; <code>cfn-lint</code> clean; DEPLOYMENT.md reflects every new parameter and stack.</p>
+<h2 id="plan-phase-2-environment-configuration-day">Phase 2 — Environment configuration (½ day)</h2>
+<ul>
+<li><input disabled="" type="checkbox"> Copy <code>shared/etc/common.sh.example</code> → <code>common.sh</code> and fill: profile, region, account, SAM bucket, VPC ID, private subnet IDs (both <code>PRIVATE_SUBNET_IDS</code> and <code>PUBLIC_SUBNET_IDS</code> = private IDs for the ALB), <code>ALB_INGRESS_CIDR</code>, <code>PUBLIC_FQDN</code>, <code>RDS_ALLOWED_CIDR</code>, Cognito names, artifact and logging buckets.</li>
+<li><input disabled="" type="checkbox"> <code>shared/etc/environment.sh</code>: <code>P_INFRA_ALB_SCHEME=internal</code>; tags.</li>
+<li><input disabled="" type="checkbox"> <code>backend/etc/environment.sh</code>: <code>P_ECS_BACKEND_CPU=512</code>, <code>_MEMORY=1024</code>, <code>_DESIRED_COUNT=1</code>; RDS class <code>db.t3.micro</code>, Multi-AZ <code>false</code>, proxy <code>false</code>, deletion protection <code>true</code>. The task&#39;s database URL comes from the RDS stack&#39;s secret, which uses the instance endpoint when the proxy is off.</li>
+<li><input disabled="" type="checkbox"> <code>frontend/etc/environment.sh</code>: <code>256</code> / <code>512</code> / <code>1</code>; private subnet IDs.</li>
+<li><input disabled="" type="checkbox"> Confirm all three env files are gitignored (<code>git check-ignore</code>).</li>
+</ul>
+<p><strong>Exit:</strong> <code>make -n</code> for each stack shows the intended parameter overrides; no real values in tracked files.</p>
+<h2 id="plan-phase-3-foundation-stacks-day-mostly-waiting">Phase 3 — Foundation stacks (½ day, mostly waiting)</h2>
+<p>Order matters; each stack&#39;s outputs feed the next via <code>make outputs</code>.</p>
+<ol>
+<li><input disabled="" type="checkbox"> <code>loom-dns</code> → delegate NS records in the parent zone; wait for resolution.</li>
+<li><input disabled="" type="checkbox"> <code>loom-cognito</code> with <code>pCreateDemoUsers=false</code> → user pool, clients, groups. Create real operators in <code>t-admin</code>/<code>t-user</code> and the relevant <code>g-*</code> groups.</li>
+<li><input disabled="" type="checkbox"> <code>loom-infra</code> with <code>pAlbScheme=internal</code> → verify: ALB scheme <code>internal</code>, nodes in the two private subnets, listener 443 only, certificate <code>ISSUED</code>, A record resolves to private IPs.</li>
+<li><input disabled="" type="checkbox"> <code>loom-ecs-cluster</code>.</li>
+<li><input disabled="" type="checkbox"> <code>loom-rds</code> → verify single-AZ, no proxy, deletion protection on, backups 7 days, not publicly accessible; capture <code>oRdsEndpoint</code>.</li>
+<li><input disabled="" type="checkbox"> <code>loom-agent-sg</code> with the CIDR/SG rules agents need.</li>
+<li><input disabled="" type="checkbox"> <code>loom-alarms</code> with the email subscription confirmed.</li>
+<li><input disabled="" type="checkbox"> <code>[~]</code> <code>privatelink</code> only if a consuming VPC exists.</li>
+</ol>
+<p><strong>Exit:</strong> <code>make outputs</code> for <code>shared/</code> and <code>backend/</code> populates every <code>O_*</code> variable the service stacks need.</p>
+<h2 id="plan-phase-4-build-and-deploy-services-day">Phase 4 — Build and deploy services (½ day)</h2>
+<ul>
+<li><input disabled="" type="checkbox"> Build and push backend and frontend images (<code>make build</code> targets); confirm ECR scan results.</li>
+<li><input disabled="" type="checkbox"> Deploy the backend service; watch the deployment reach <code>COMPLETED</code>; <code>/health</code> healthy in the backend target group.</li>
+<li><input disabled="" type="checkbox"> Deploy the frontend service; <code>/</code> healthy in the frontend target group.</li>
+<li><input disabled="" type="checkbox"> From inside the VPC (ECS Exec, or a temporary instance): <code>curl -sk https://&lt;fqdn&gt;/health</code> and <code>https://&lt;fqdn&gt;/</code> return 200.</li>
+<li><input disabled="" type="checkbox"> Deliberately deploy a broken image tag once; confirm the circuit breaker rolls back and the alarm fires; redeploy the good tag.</li>
+</ul>
+<p><strong>Exit:</strong> both services stable at desired count 1 for 30 minutes; rollback proven.</p>
+<h2 id="plan-phase-5-private-access-path-day">Phase 5 — Private access path (½ day)</h2>
+<p>Pick one, per phase 0.</p>
+<ul>
+<li><input disabled="" type="checkbox"> <strong>Corporate VPN / peering:</strong> ensure routes to the VPC CIDR and DNS resolution of the public hostname; <code>pAlbIngressCidr</code> covers the client range.</li>
+<li><input disabled="" type="checkbox"> <strong>Subnet router:</strong> launch a <code>t4g.nano</code> in a private subnet with SSM-only access, install the subnet router, advertise the VPC CIDR, approve routes; set <code>pAlbIngressCidr</code> to the VPC CIDR (traffic arrives from the router&#39;s private IP). Document the instance in the runbook.</li>
+<li><input disabled="" type="checkbox"> From an operator laptop: sign in, load the UI, deploy a test managed agent, invoke it, watch the SSE stream, delete it <strong>with cleanup ticked</strong>.</li>
+</ul>
+<p><strong>Exit:</strong> two operators can use Loom end-to-end from their normal workstations with no public endpoint involved.</p>
+<h2 id="plan-phase-6-operations-readiness-1-day">Phase 6 — Operations readiness (1 day)</h2>
+<ul>
+<li><input disabled="" type="checkbox"> Restore test: create a manual snapshot, restore to a temporary instance, point a scratch backend at it (or verify tables), delete the temporary instance. Record time taken as the RTO.</li>
+<li><input disabled="" type="checkbox"> Runbooks under <code>docs/internal-deployment/runbooks/</code>: restore RDS; manual rollback; rotate RDS credential; ECS Exec; sync fork with upstream; delete an agent with cleanup.</li>
+<li><input disabled="" type="checkbox"> AWS Budgets alert at the agreed figure with the SNS topic.</li>
+<li><input disabled="" type="checkbox"> Verify log retention (30 days) and that ALB access logs land in the logging bucket.</li>
+<li><input disabled="" type="checkbox"> Optional CloudWatch dashboard (ALB 5xx/latency, task CPU/memory, RDS connections/storage).</li>
+<li><input disabled="" type="checkbox"> Cost check after the first full week against the estimate in DESIGN.md §10.</li>
+</ul>
+<p><strong>Exit:</strong> restore proven and timed; alarms observed firing at least once; budget alert live.</p>
+<h2 id="plan-phase-7-agents-in-vpc-mode-day">Phase 7 — Agents in VPC mode (½ day)</h2>
+<ul>
+<li><input disabled="" type="checkbox"> In Loom Settings → Networking create a VPC config profile with the agent subnets and <code>loom-agent-sg</code>.</li>
+<li><input disabled="" type="checkbox"> Deploy a managed (harness) agent with that profile; confirm the ENI appears in the designated subnet and the runtime reaches <code>READY</code>.</li>
+<li><input disabled="" type="checkbox"> Have the agent call one VPC-internal resource (an internal MCP server or HTTP endpoint) and one AWS API (a Bedrock model). Both must succeed, proving the private path and the NAT route.</li>
+<li><input disabled="" type="checkbox"> Register an internal MCP server in Loom and confirm tool discovery from the agent.</li>
+<li><input disabled="" type="checkbox"> <code>[~]</code> PrivateLink: deploy <code>privatelink.yaml</code>, create an interface endpoint in a consumer VPC, invoke the agent privately.</li>
+</ul>
+<p><strong>Exit:</strong> an agent in VPC mode reaches an internal resource and a model endpoint; documented in the design as verified.</p>
+<h2 id="plan-phase-8-hardening-and-handover-day">Phase 8 — Hardening and handover (½ day)</h2>
+<ul>
+<li><input disabled="" type="checkbox"> IAM review of the backend task role: list every <code>Resource: &quot;*&quot;</code> and narrow where an ARN pattern exists.</li>
+<li><input disabled="" type="checkbox"> Confirm demo users are absent, MFA policy decided, Cognito advanced security settings reviewed.</li>
+<li><input disabled="" type="checkbox"> Security review of the fork diff (<code>/security-review</code> or equivalent); fix findings.</li>
+<li><input disabled="" type="checkbox"> Update the AgentCore atlas README (repo map and decision index) with the fork, the stacks, and the run cost.</li>
+<li><input disabled="" type="checkbox"> Schedule the monthly upstream merge; first merge performed and deployed.</li>
+</ul>
+<p><strong>Exit:</strong> design status moves from Draft to Accepted; atlas updated; owner named.</p>
+<h2 id="plan-effort-and-cost-summary">Effort and cost summary</h2>
+<table>
+<thead>
+<tr>
+<th>Phase</th>
+<th>Effort</th>
+<th>Adds run cost</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>0 Decisions</td>
+<td>½ day</td>
+<td>—</td>
+</tr>
+<tr>
+<td>1 Fork changes</td>
+<td>1–2 days</td>
+<td>—</td>
+</tr>
+<tr>
+<td>2 Env config</td>
+<td>½ day</td>
+<td>—</td>
+</tr>
+<tr>
+<td>3 Foundation stacks</td>
+<td>½ day</td>
+<td>ALB, RDS, KMS, Route 53 (~$37)</td>
+</tr>
+<tr>
+<td>4 Services</td>
+<td>½ day</td>
+<td>Fargate (~$27)</td>
+</tr>
+<tr>
+<td>5 Access path</td>
+<td>½ day</td>
+<td>$0 or ~$3</td>
+</tr>
+<tr>
+<td>6 Ops readiness</td>
+<td>1 day</td>
+<td>CloudWatch (~$4)</td>
+</tr>
+<tr>
+<td>7 Agents in VPC mode</td>
+<td>½ day</td>
+<td>per-agent usage</td>
+</tr>
+<tr>
+<td>8 Hardening</td>
+<td>½ day</td>
+<td>—</td>
+</tr>
+<tr>
+<td><strong>Total</strong></td>
+<td><strong>≈ 6 days</strong></td>
+<td><strong>≈ $73/month</strong></td>
+</tr>
+</tbody></table>
+<h2 id="plan-out-of-scope-for-this-plan">Out of scope for this plan</h2>
+<ul>
+<li>CI-driven deploys (the make targets are CI-ready; wiring Jenkins is a separate ticket).</li>
+<li>Multi-AZ or multi-task management plane.</li>
+<li>Federated identity providers.</li>
+<li>Migrating existing agents from the platform account into Loom&#39;s inventory (Loom imports by ARN; do it after phase 7 if wanted).</li>
+</ul>
+</article>
+</main>
+</div>
+<script>
+// wrap wide tables so the page body never scrolls sideways
+document.querySelectorAll('article table').forEach(t => {
+  if (t.parentElement.classList.contains('tablewrap')) return;
+  const w = document.createElement('div'); w.className = 'tablewrap'; t.replaceWith(w); w.appendChild(t);
+});
+</script>
+</body>
+</html>
