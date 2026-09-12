@@ -60,9 +60,8 @@ Order matters; each stack's outputs feed the next via `make outputs`.
 
 ## Phase 4 — Build and deploy services (½ day)
 
-- [ ] Build and push backend and frontend images (`make build` targets); confirm ECR scan results.
-- [ ] Deploy the backend service; watch the deployment reach `COMPLETED`; `/health` healthy in the backend target group.
-- [ ] Deploy the frontend service; `/` healthy in the frontend target group.
+- [ ] `cd shared && make deploy.backend` (builds with podman, pushes to ECR, deploys the service); confirm the ECR scan result; watch the deployment reach `COMPLETED`; `/health` healthy in the backend target group.
+- [ ] `cd shared && make deploy.frontend`; `/` healthy in the frontend target group.
 - [ ] From inside the VPC (ECS Exec, or a temporary instance): `curl -sk https://<fqdn>/health` and `https://<fqdn>/` return 200.
 - [ ] Deliberately deploy a broken image tag once; confirm the circuit breaker rolls back and the alarm fires; redeploy the good tag.
 

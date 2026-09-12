@@ -394,7 +394,7 @@ def diagram_pipeline(ic: Icons) -> Canvas:
     c.text(20, 46, "Every step is an existing make target; the plan adds the deployment guards and alarms. "
                    "No public endpoints are touched at any stage.", size=11)
 
-    c.icon("resource", "User", 90, 170, "Operator\nmake targets")
+    c.icon("resource", "User", 90, 170, "Operator\ncd shared && make …")
     c.icon("resource", "GitRepository", 270, 170, "Fork of awslabs/loom\nbranch feat/internal-alb", 40)
     c.icon("resource", "Document", 180, 300, "etc/common.sh · etc/environment.sh\nparameters for every stack", 40)
 
@@ -406,7 +406,7 @@ def diagram_pipeline(ic: Icons) -> Canvas:
     c.icon("architecture-service", "AmazonCloudWatch", 1210, 170, "CloudWatch alarms\n5xx · unhealthy hosts · CPU")
     c.icon("architecture-service", "AmazonSimpleNotificationService", 1380, 170, "SNS\nemail / chat", 40)
 
-    c.arrow([(120, 170), (246, 170)], num=1, label="make build", label_at=0.3, label_dy=-30)
+    c.arrow([(120, 170), (246, 170)], num=1, label="make deploy.<service>", label_at=0.3, label_dy=-30)
     c.arrow([(294, 170), (426, 170)], num=2, label="image tag = git SHA", label_at=0.3, label_dy=-30)
     c.arrow([(204, 300), (640, 300), (640, 246)], num=3, dashed=True,
             label="parameters (pAlbScheme, CIDRs, task sizes, secret ARNs)", label_at=0.5, label_dy=-8)
