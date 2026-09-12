@@ -220,6 +220,8 @@ The frontend continues to run locally (same as Phase 1).
 
 ## Phase 3: Full Deployment to AWS
 
+> For the internal (private ALB, existing VPC, cost-reduced) variant of Phase 3, see [docs/internal-deployment/DESIGN.md](docs/internal-deployment/DESIGN.md) and its [PLAN.md](docs/internal-deployment/PLAN.md). The steps below are unchanged; only parameter values differ.
+
 This phase deploys the rest of the stack (frontend, backend) to Amazon ECS Fargate behind an Application Load Balancer.
 **In this phase, you can** run Loom as a production-ready, fully managed service accessible via HTTPS with custom domain, enable your team to access Loom from anywhere without local setup, leverage auto-scaling for the backend, and operate with enterprise-grade security, observability, and high availability.
 
