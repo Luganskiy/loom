@@ -39,7 +39,7 @@ Expected run cost is about $70 to $75 a month when the existing NAT gateway is r
 ## 3. Context and constraints
 
 - **What Loom is.** A control plane for building, deploying, and operating agents on Bedrock AgentCore. Agents keep running whether or not the Loom UI is up. Loom's database holds metadata (agent records, MCP/A2A registrations, settings), not agent state.
-- **Where it runs.** The AgentCore platform already has a VPC with private subnets, a NAT gateway and an internet gateway. This design deploys Loom into that VPC and region. Existing resources are referenced by parameter; no IDs are hardcoded in the fork.
+- **Where it runs.** The AgentCore platform already has a VPC (`10.0.0.0/16`, us-west-2) with two public and two private subnets across two AZs, a NAT gateway in one public subnet, and an internet gateway. **Confirmed 2026-09-12:** both private subnets route `0.0.0.0/0` to the NAT gateway, so they qualify for the ALB, the tasks, RDS and agent ENIs without any network change. This design deploys Loom into that VPC and region. Resource IDs are referenced by parameter from the local, gitignored env files; none are hardcoded in the fork.
 - **Who uses it.** A small number of operators. Cognito's free tier covers this many times over.
 - **Upstream facts the design relies on** (verified against the fork at the commit that added `pAlbScheme`):
   - Both containers listen on port 8000. The ALB routes `/api/*` and `/health` to the backend target group (rule priority 1) and everything else to the frontend.
@@ -124,10 +124,16 @@ The internal ALB is only useful if operators have a path into the VPC. This is t
 | AWS Client VPN | $75+ | Endpoint association per hour plus per-connection hours. More than the ALB and RDS combined. Not recommended at this scale. |
 | Internet-facing ALB locked to known IPs + Cognito | $0 | Defensible for a small team with fixed egress IPs. Available by setting `pAlbScheme=internet-facing`. Not the default in this design. |
 
-The design assumes the subnet router unless a corporate VPN exists. See PLAN.md phase 5.
+**Confirmed 2026-09-12:** operators already use a VPN server, and it runs **outside AWS** (no VPN endpoint, connection, or instance exists in the platform account). A VPN server outside the VPC cannot reach the internal ALB by itself. Two ways to close the gap:
+
+- **Site-to-Site VPN** from that server (or its router) to a virtual private gateway or transit gateway on the platform VPC: about $36 a month for the AWS side, IPsec, no new instance. Clients keep their current VPN; the VPN server routes the VPC CIDR over the tunnel.
+- **Move or mirror the VPN server into the VPC** (a small instance in a public subnet running the same WireGuard/OpenVPN/Tailscale software): about $3 to $8 a month, one more host to patch.
+
+Either way `pAlbIngressCidr` is the VPN client range (or the VPC CIDR if the tunnel NATs). Decide in PLAN.md phase 0; the subnet router remains the fallback. See PLAN.md phase 5.
 
 ### 5.4 DNS and TLS
 
+- **Confirmed 2026-09-12:** the hostname is `loom.visusops.com`; the parent zone `visusops.com` is hosted at **Cloudflare**. The existing `mcp.visusops.com` uses a different pattern (a *private* Route 53 zone associated with the VPC, alias to an API Gateway VPC endpoint, ACM validated by a CNAME placed in Cloudflare). For Loom the recommended pattern is upstream's: create the public zone with `loom-dns`, then add the four **NS records for `loom`** in Cloudflare (DNS only, not proxied). ACM then validates and renews automatically through Route 53, and VPN clients resolve the name with any resolver. The mcp pattern (private zone + Cloudflare-validated certificate) would need two fork changes (an optional `pCertificateArn` on `infra.yaml`, a private zone in `dns.yaml`) and requires the VPN to push the VPC resolver to clients; it is not recommended for Loom.
 - The Route 53 hosted zone stays **public** because ACM DNS validation needs a publicly resolvable CNAME. The A record is an alias to the internal ALB, so it resolves to private IPs. That leaks the existence of the hostname and private IPs, which is acceptable for an internal tool; it does not expose a service.
 - If leaking is unacceptable, use a private hosted zone associated with the VPC for the A record and keep the public zone only for ACM validation. This is a small change to `dns.yaml`/`infra.yaml` and is listed as optional in the plan.
 - TLS terminates on the ALB with the ACM certificate and the `ELBSecurityPolicy-TLS13-1-2-2021-06` policy. Tasks speak plain HTTP on 8000 inside the VPC.
@@ -256,6 +262,7 @@ Sizing rationale: the backend is I/O-bound (waiting on AWS APIs and SSE streams)
 - **Upstream drift.** Upstream moves quickly (recent Integrations page, dependabot bumps). Merge upstream monthly; the fork's diff is small by design.
 - **Loom's delete semantics.** `DELETE /api/agents/{id}` leaves AWS resources running unless cleanup is requested. Document and consider a cost-guard check.
 - **Certificate validation on first deploy** requires the parent zone's NS delegation to be live before `loom-infra` can complete.
+- **Lesson from `mcp.visusops.com`:** an ACM certificate validated by a CNAME that is later removed from Cloudflare cannot renew (observed: renewal `PENDING_VALIDATION`, expiry 2026-09-27). With NS delegation the validation record lives in Route 53 and is managed by the stack, so this cannot recur for Loom.
 
 ## 15. Alternatives considered
 

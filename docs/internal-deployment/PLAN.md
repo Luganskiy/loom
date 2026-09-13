@@ -6,12 +6,12 @@ Legend: `[ ]` open · `[x]` done · `[~]` optional
 
 ## Phase 0 — Decisions and prerequisites (½ day)
 
-- [ ] Confirm the access path: corporate VPN/peering exists → use it; otherwise plan the subnet router (phase 5). Record the answer in DESIGN.md §5.3.
-- [ ] Confirm the target VPC: reuse the platform VPC (private subnets in two AZs, NAT route present on those subnets) and note which private subnets host the ALB/tasks/RDS and which are designated for agent ENIs.
-- [ ] Confirm region, Loom subdomain, and the parent hosted zone that will delegate it.
+- [~] Access path: a VPN server exists but outside AWS (confirmed 2026-09-12). Choose Site-to-Site VPN to the VPC (~$36/mo) or a VPN host inside the VPC (~$3–8/mo); see DESIGN.md §5.3. **Open.**
+- [x] Target VPC confirmed 2026-09-12: platform VPC `10.0.0.0/16`, private subnets `10.0.2.0/24` (AZ a) and `10.0.3.0/24` (AZ b), both with a NAT route. Same two subnets for ALB, tasks, RDS and agent ENIs.
+- [x] Region us-west-2; hostname `loom.visusops.com`; parent zone `visusops.com` at Cloudflare → delegate `loom` to Route 53 with NS records (DNS only). Confirmed 2026-09-12.
 - [ ] Confirm the monthly budget figure for the AWS Budgets alarm (design estimate: $73, or $106 with a dedicated NAT).
 - [ ] Create the SAM deployment bucket and the S3 access-logging bucket if the account does not have them.
-- [ ] Decide whether the public hosted zone with a private-IP alias is acceptable (design default) or a private hosted zone is required (`[~]` task in phase 3).
+- [x] Public hosted zone with a private-IP alias (design default), because Cloudflare delegation gives automatic ACM validation and renewal. Decided 2026-09-12.
 
 **Exit:** every value in DESIGN.md Appendix A has a concrete answer written into `shared/etc/common.sh` (local, gitignored).
 
@@ -47,7 +47,7 @@ Branch: `feat/internal-alb` in `github.com/Luganskiy/loom`. Keep every change pa
 
 Order matters; each stack's outputs feed the next via `make outputs`.
 
-1. [ ] `loom-dns` → delegate NS records in the parent zone; wait for resolution.
+1. [ ] `loom-dns` → copy the four `oNameServers` values into Cloudflare as NS records for `loom` (DNS only, grey cloud); wait until `dig NS loom.visusops.com` returns them.
 2. [ ] `loom-cognito` with `pCreateDemoUsers=false` → user pool, clients, groups. Create real operators in `t-admin`/`t-user` and the relevant `g-*` groups.
 3. [ ] `loom-infra` with `pAlbScheme=internal` → verify: ALB scheme `internal`, nodes in the two private subnets, listener 443 only, certificate `ISSUED`, A record resolves to private IPs.
 4. [ ] `loom-ecs-cluster`.
