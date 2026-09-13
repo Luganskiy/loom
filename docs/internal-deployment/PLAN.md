@@ -6,7 +6,7 @@ Legend: `[ ]` open · `[x]` done · `[~]` optional
 
 ## Phase 0 — Decisions and prerequisites (½ day)
 
-- [~] Access path: a VPN server exists but outside AWS (confirmed 2026-09-12). Choose Site-to-Site VPN to the VPC (~$36/mo) or a VPN host inside the VPC (~$3–8/mo); see DESIGN.md §5.3. **Open.**
+- [x] Access path decided 2026-09-12: a VPN host (bastion) inside the platform VPC, provisioned by Slava; see DESIGN.md §5.3.
 - [x] Target VPC confirmed 2026-09-12: platform VPC `10.0.0.0/16`, private subnets `10.0.2.0/24` (AZ a) and `10.0.3.0/24` (AZ b), both with a NAT route. Same two subnets for ALB, tasks, RDS and agent ENIs.
 - [x] Region us-west-2; hostname `loom.visusops.com`; parent zone `visusops.com` at Cloudflare → delegate `loom` to Route 53 with NS records (DNS only). Confirmed 2026-09-12.
 - [ ] Confirm the monthly budget figure for the AWS Budgets alarm (design estimate: $73, or $106 with a dedicated NAT).
@@ -69,10 +69,12 @@ Order matters; each stack's outputs feed the next via `make outputs`.
 
 ## Phase 5 — Private access path (½ day)
 
-Pick one, per phase 0.
+Decided in phase 0: VPN host inside the VPC.
 
-- [ ] **Corporate VPN / peering:** ensure routes to the VPC CIDR and DNS resolution of the public hostname; `pAlbIngressCidr` covers the client range.
-- [ ] **Subnet router:** launch a `t4g.nano` in a private subnet with SSM-only access, install the subnet router, advertise the VPC CIDR, approve routes; set `pAlbIngressCidr` to the VPC CIDR (traffic arrives from the router's private IP). Document the instance in the runbook.
+- [ ] Launch the VPN host in a **public** subnet of the platform VPC: small Graviton instance, Elastic IP, security group with only the VPN port from the internet, SSM agent for administration (no port 22), source/destination check disabled if it routes client traffic.
+- [ ] Install and configure the VPN server; push routes for `10.0.0.0/16` to clients; decide whether clients keep their own CIDR (then `pAlbIngressCidr` = client CIDR) or are NATed by the host (then `pAlbIngressCidr` = VPC CIDR).
+- [ ] Confirm DNS from a VPN client: `dig loom.visusops.com` returns the ALB's private IPs (public delegation, so no resolver push is needed).
+- [ ] Add the host to the runbook (patching via SSM, key rotation, how to rebuild).
 - [ ] From an operator laptop: sign in, load the UI, deploy a test managed agent, invoke it, watch the SSE stream, delete it **with cleanup ticked**.
 
 **Exit:** two operators can use Loom end-to-end from their normal workstations with no public endpoint involved.
@@ -117,11 +119,11 @@ Pick one, per phase 0.
 | 2 Env config | ½ day | — |
 | 3 Foundation stacks | ½ day | ALB, RDS, KMS, Route 53 (~$37) |
 | 4 Services | ½ day | Fargate (~$27) |
-| 5 Access path | ½ day | $0 or ~$3 |
+| 5 Access path | ½ day | ~$3–8 |
 | 6 Ops readiness | 1 day | CloudWatch (~$4) |
 | 7 Agents in VPC mode | ½ day | per-agent usage |
 | 8 Hardening | ½ day | — |
-| **Total** | **≈ 6 days** | **≈ $73/month** |
+| **Total** | **≈ 6 days** | **≈ $75/month** |
 
 ## Out of scope for this plan
 

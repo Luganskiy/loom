@@ -129,7 +129,7 @@ The internal ALB is only useful if operators have a path into the VPC. This is t
 - **Site-to-Site VPN** from that server (or its router) to a virtual private gateway or transit gateway on the platform VPC: about $36 a month for the AWS side, IPsec, no new instance. Clients keep their current VPN; the VPN server routes the VPC CIDR over the tunnel.
 - **Move or mirror the VPN server into the VPC** (a small instance in a public subnet running the same WireGuard/OpenVPN/Tailscale software): about $3 to $8 a month, one more host to patch.
 
-Either way `pAlbIngressCidr` is the VPN client range (or the VPC CIDR if the tunnel NATs). Decide in PLAN.md phase 0; the subnet router remains the fallback. See PLAN.md phase 5.
+**Decided 2026-09-12: a VPN host inside the VPC.** A small instance in a public subnet (Elastic IP, VPN port only from the internet, SSM for administration, no SSH) terminates operator VPN sessions and routes them into the VPC. It doubles as the bastion, so ECS Exec stays the path for container access and no SSH bastion is needed. `pAlbIngressCidr` is the VPN client CIDR (or the VPC CIDR if the host NATs client traffic). The host is provisioned outside the Loom stacks and is listed in PLAN.md phase 5.
 
 ### 5.4 DNS and TLS
 
@@ -194,7 +194,7 @@ Estimates are on-demand, us-west-2, 730 h/month, excluding data transfer and exc
 | RDS PostgreSQL | db.t3.micro single-AZ, 20 GB gp3 | 15 | db.t3.small Multi-AZ + Proxy ≈ 75 |
 | Internal ALB | fixed + LCU | 18 | 18 |
 | NAT gateway | reused | 0 | 33 + data |
-| Subnet router | t4g.nano | 3 | n/a |
+| VPN host in the VPC (bastion) | t4g.nano/micro + EIP | 3–8 | n/a |
 | CloudWatch | logs, 6 alarms, Container Insights | 4 | 4 |
 | KMS | 3 CMKs | 3 | 3 |
 | Secrets Manager, Route 53, ECR, S3 | | 3 | 3 |
@@ -251,12 +251,12 @@ Sizing rationale: the backend is I/O-bound (waiting on AWS APIs and SSE streams)
 | D4 | Single-AZ RDS, no Proxy, deletion protection on | Multi-AZ; Proxy | Metadata-only DB; backups give RPO ≤ 5 min; Proxy only pays off with many connections |
 | D5 | Drop the bastion; use ECS Exec | Keep bastion | Bastion exists only for an SSM tunnel; ECS Exec covers it at zero cost |
 | D6 | Keep the public hosted zone with a private-IP alias | Private hosted zone | ACM validation needs the public zone; hostname leak is acceptable; private zone listed as optional |
-| D7 | Subnet router as the default access path | Client VPN; corporate VPN | Cheapest working path if no corporate VPN exists; replaceable without touching Loom |
+| D7 | VPN host inside the VPC (also the bastion) | Client VPN; Site-to-Site VPN; subnet router | Slava's VPN moves into the account; cheapest option that needs no tunnel to an external site; replaceable without touching Loom |
 | D8 | Alarms as a separate additive stack | Edit upstream ECS/RDS templates | Keeps the upstream diff small; alarms can be dropped or replaced independently |
 
 ## 14. Risks and open questions
 
-- **Access path.** Whether a corporate VPN exists decides between D7's subnet router and $0. Confirm before phase 5.
+- **VPN host hardening.** The VPN host is the only internet-exposed component. Keep its security group to the VPN port, patch through SSM, and put its CIDR, not `0.0.0.0/0`, in `pAlbIngressCidr`.
 - **AgentCore VPC mode egress.** Agent subnets must route to the NAT gateway; if they are isolated subnets, model calls fail. Verify the route table of the designated subnets.
 - **Browser needs internet for Cognito.** Fully air-gapped clients cannot sign in. Acceptable for the intended users.
 - **Upstream drift.** Upstream moves quickly (recent Integrations page, dependabot bumps). Merge upstream monthly; the fork's diff is small by design.
